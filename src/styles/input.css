@@ -1,0 +1,178 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* NeroMind Custom Styles */
+.neromind-container {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.neromind-root {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Dark mode detection for Obsidian */
+.theme-dark .neromind-root {
+  --nm-grid-color: rgba(255, 255, 255, 0.05);
+}
+
+.theme-light .neromind-root {
+  --nm-grid-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Smooth transitions for theme switching */
+.neromind-root * {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* Custom scrollbar styles */
+.neromind-root ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.neromind-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.neromind-root ::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+}
+
+.neromind-root ::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
+
+/* React Flow Overrides */
+.neromind-root .react-flow {
+  background: transparent !important;
+}
+
+.neromind-root .react-flow__background {
+  background: transparent !important;
+}
+
+/* Grid dot color for light/dark themes */
+.theme-light .neromind-root {
+  --nm-grid-dot-color: rgba(0, 0, 0, 0.15);
+}
+
+.theme-dark .neromind-root {
+  --nm-grid-dot-color: rgba(255, 255, 255, 0.15);
+}
+
+/* MindMap Node Styles */
+.nm-mindmap-node {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', sans-serif;
+}
+
+/* MindMap Handle Styles */
+.nm-mindmap-handle {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.nm-mindmap-node:hover .nm-mindmap-handle {
+  opacity: 1;
+}
+
+/* React Flow Controls */
+.neromind-root .react-flow__controls {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.neromind-root .react-flow__controls-button {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.neromind-root .react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+.neromind-root .react-flow__controls-button:hover {
+  background: rgba(128, 128, 128, 0.15);
+}
+
+.neromind-root .react-flow__controls-button svg {
+  fill: currentColor;
+  max-width: 14px;
+  max-height: 14px;
+}
+
+.theme-light .neromind-root .react-flow__controls-button svg {
+  fill: #374151;
+}
+
+.theme-dark .neromind-root .react-flow__controls-button svg {
+  fill: #e5e7eb;
+}
+
+/* React Flow MiniMap */
+.neromind-root .react-flow__minimap {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+/* Edge Animation */
+.neromind-root .react-flow__edge-path {
+  stroke-linecap: round;
+}
+
+/* Selection box */
+.neromind-root .react-flow__selection {
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px dashed rgba(99, 102, 241, 0.5);
+  border-radius: 4px;
+}
+
+/* Node selection */
+.neromind-root .react-flow__node.selected {
+  outline: none !important;
+}
+
+/* Attribution hiding */
+.neromind-root .react-flow__attribution {
+  display: none;
+}
+
+/* Pane cursor */
+.neromind-root .react-flow__pane {
+  cursor: grab;
+}
+
+.neromind-root .react-flow__pane:active {
+  cursor: grabbing;
+}
+
+/* Scale utility classes */
+.nm-scale-102 {
+  transform: scale(1.02);
+}
+
+.nm-scale-105 {
+  transform: scale(1.05);
+}

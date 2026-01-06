@@ -1,0 +1,11 @@
+{
+  "id": "kk-nero-mind",
+  "name": "KK-NeroMind",
+  "version": "0.0.1",
+  "minAppVersion": "0.15.0",
+  "description": "A minimal, Apple-style mind map plugin integrated with ACE framework.",
+  "author": "Nero-kk",
+  "youtube": "https://www.youtube.com/@Nero-kk",
+  "authorUrl": "https://github.com/Nero-kk",
+  "isDesktopOnly": false
+}

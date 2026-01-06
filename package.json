@@ -1,0 +1,38 @@
+{
+  "name": "kk-neromind",
+  "version": "1.0.0",
+  "description": "Intelligent mind map plugin for Obsidian based on A.C.E Framework.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "build:css": "npx tailwindcss -i ./src/styles/input.css -o ./styles.css --minify"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "mindmap",
+    "neromind"
+  ],
+  "author": "Nero-kk",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "autoprefixer": "^10.4.16",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.19.11",
+    "obsidian": "latest",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.4.0",
+    "tslib": "^2.6.2",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.10.0",
+    "lucide-react": "^0.303.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}
