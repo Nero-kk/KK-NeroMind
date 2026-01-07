@@ -7,7 +7,7 @@ import {
   HORIZONTAL_SPACING,
   VERTICAL_SPACING,
   ROOT_POSITION,
-} from '../types';
+} from "../types";
 
 // Generate unique ID
 export const generateId = (): string => {
@@ -19,22 +19,24 @@ export const createNode = (options: CreateNodeOptions): MindMapNode => {
   const id = generateId();
   return {
     id,
-    type: 'mindmap',
+    type: "mindmap",
     position: options.position,
     data: {
-      label: options.label || 'New Node',
+      label: options.label || "New Node",
       parentId: options.parentId || null,
       level: options.level ?? 0,
-      isEditing: true, // Start in editing mode
+      isEditing: options.isEditing ?? true, // Default to true unless specified
     },
+    // Important for dragging to work properly in React Flow
+    dragHandle: ".mindmap-node-drag-handle",
   };
 };
 
 // Create root node
-export const createRootNode = (label: string = 'Central Idea'): MindMapNode => {
+export const createRootNode = (label: string = "Central Idea"): MindMapNode => {
   return {
     id: generateId(),
-    type: 'mindmap',
+    type: "mindmap",
     position: ROOT_POSITION,
     data: {
       label,
@@ -51,9 +53,10 @@ export const createEdge = (sourceId: string, targetId: string): MindMapEdge => {
     id: `edge-${sourceId}-${targetId}`,
     source: sourceId,
     target: targetId,
-    type: 'smoothstep',
+    type: "smoothstep", // Mind map style edge
+    animated: false,
     style: {
-      stroke: 'rgba(99, 102, 241, 0.6)',
+      stroke: "rgba(99, 102, 241, 0.6)",
       strokeWidth: 2,
     },
   };
@@ -70,12 +73,12 @@ export const calculateChildPosition = (
   // Position child to the right of parent
   const childX = parentX + NODE_WIDTH + HORIZONTAL_SPACING;
 
-  // Calculate Y position based on existing children
+  // If no children, place parallel to parent or slightly adjusted
   if (existingChildren.length === 0) {
     return { x: childX, y: parentY };
   }
 
-  // Find the lowest child and position below
+  // Find the lowest child and position below it
   const childrenYPositions = existingChildren.map((c) => c.position.y);
   const lowestY = Math.max(...childrenYPositions);
 
@@ -89,9 +92,11 @@ export const calculateSiblingPosition = (
 ): NodePosition => {
   const currentX = currentNode.position.x;
 
-  // Find the lowest sibling and position below
+  // Find the lowest sibling (including current) and position below
   const siblingsIncludingCurrent = [...siblings, currentNode];
-  const lowestY = Math.max(...siblingsIncludingCurrent.map((s) => s.position.y));
+  const lowestY = Math.max(
+    ...siblingsIncludingCurrent.map((s) => s.position.y)
+  );
 
   return { x: currentX, y: lowestY + VERTICAL_SPACING };
 };
@@ -150,7 +155,7 @@ export const deleteNodeWithDescendants = (
   return { nodes: newNodes, edges: newEdges };
 };
 
-// Update node label
+// Update node label (Utility helper)
 export const updateNodeLabel = (
   nodeId: string,
   label: string,
