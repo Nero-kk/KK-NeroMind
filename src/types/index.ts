@@ -22,6 +22,20 @@ export interface Disposable {
 // 기본 타입
 // ============================================================================
 
+/**
+ * 노드 식별자
+ * - 의미적으로 NodeId와 EdgeId를 구분하기 위한 타입 alias
+ * - 런타임에는 string이지만 컴파일 타임에 타입 안정성 제공
+ */
+export type NodeId = string;
+
+/**
+ * 엣지 식별자
+ * - 의미적으로 NodeId와 EdgeId를 구분하기 위한 타입 alias
+ * - 런타임에는 string이지만 컴파일 타임에 타입 안정성 제공
+ */
+export type EdgeId = string;
+
 export type Direction = 'up' | 'down' | 'left' | 'right';
 
 export interface Position {
@@ -53,13 +67,13 @@ export interface BoundingBox {
  * Architecture v4.0 § 2.1 노드 데이터 구조 기준
  */
 export interface MindMapNode {
-	id: string; // UUID
+	id: NodeId; // UUID
 	content: string; // 노드 텍스트 또는 노트 링크 (예: [[김진원]])
 	position: Position;
 
 	// 계층 구조
-	parentId: string | null; // 루트노드는 null
-	childIds: string[]; // 자식 노드 ID 배열
+	parentId: NodeId | null; // 루트노드는 null
+	childIds: NodeId[]; // 자식 노드 ID 배열
 
 	// 방향성 (루트노드에서만 설정, 자식은 상속)
 	direction: Direction | null; // 루트노드는 null
@@ -92,9 +106,9 @@ export interface RootNode extends MindMapNode {
  * 엣지 (연결선)
  */
 export interface MindMapEdge {
-	id: string;
-	fromNodeId: string;
-	toNodeId: string;
+	id: EdgeId;
+	fromNodeId: NodeId;
+	toNodeId: NodeId;
 	direction: Direction;
 }
 
@@ -112,27 +126,27 @@ export interface PersistentState {
 	graph: NodeGraph;
 	layout: LayoutData;
 	settings: UserSettings;
-	pinnedNodes: Set<string>;
+	pinnedNodes: Set<NodeId>;
 }
 
 /**
  * 임시 상태 (Undo 비대상)
  */
 export interface EphemeralState {
-	selectedNodeId: string | null;
-	editingNodeId: string | null;
-	collapsedNodes: Set<string>;
+	selectedNodeId: NodeId | null;
+	editingNodeId: NodeId | null;
+	collapsedNodes: Set<NodeId>;
 	dragState: DragContext | null;
-	lastSelectedNodeId: string | null;
+	lastSelectedNodeId: NodeId | null;
 }
 
 /**
  * 노드 그래프
  */
 export interface NodeGraph {
-	nodes: Map<string, MindMapNode>;
-	edges: Map<string, MindMapEdge>;
-	rootId: string;
+	nodes: Map<NodeId, MindMapNode>;
+	edges: Map<EdgeId, MindMapEdge>;
+	rootId: NodeId;
 }
 
 /**
@@ -144,7 +158,7 @@ export interface LayoutData {
 		y: number;
 		zoom: number;
 	};
-	nodePositions: Map<string, Position>;
+	nodePositions: Map<NodeId, Position>;
 }
 
 /**
@@ -166,7 +180,7 @@ export interface MiniMapSettings {
  * 드래그 컨텍스트
  */
 export interface DragContext {
-	nodeId: string;
+	nodeId: NodeId;
 	startPosition: Position;
 	currentPosition: Position;
 }

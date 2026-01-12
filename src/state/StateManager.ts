@@ -1,29 +1,45 @@
 import {
 	Disposable,
+	EdgeId,
 	MindMapNode,
 	MindMapEdge,
 	NodeGraph,
+	NodeId,
 	PersistentState,
 	EphemeralState,
 } from '../types';
 import { StateCommand, StateContext, StateSnapshot } from './stateTypes';
+import { EventBus } from '../events/EventBus';
 
 /**
  * StateManager
  *
  * Architecture v4.0 § 상태 관리 시스템 기준
  *
- * 역할:
- * - PersistentState (Undo 대상) 관리
- * - EphemeralState (Undo 비대상) 관리
- * - 상태 변경 이벤트 발행
+ * === 책임 (Responsibilities) ===
+ * - PersistentState (Undo 대상): 그래프, 레이아웃, 설정, 핀 고정 상태 관리
+ * - EphemeralState (Undo 비대상): 선택, 편집, 접힘, 드래그 상태 관리
+ * - Snapshot 제공: 외부 소비자에게 불변 읽기 전용 뷰 제공
+ * - Command 실행: apply(command)를 통한 상태 변경 단방향 흐름
  *
- * Phase 1: 기본 골격만 구현
- * Phase 2: Snapshot 철학 적용, Command 패턴(undo/redo 제외) 추가
+ * === 하지 않는 것 (Non-Responsibilities) ===
+ * - ❌ 렌더링: SVG/DOM 조작은 Renderer 책임
+ * - ❌ 레이아웃 계산: 좌표 계산은 LayoutEngine 책임
+ * - ❌ Undo/Redo: Phase 3에서 별도 레이어로 분리 예정
+ * - ❌ 파일 저장: Phase 3에서 Persistence 레이어로 분리 예정
+ * - ❌ 이벤트 발행: Phase 2+에서 추가 예정 (현재 주석 처리)
+ * - ❌ 그래프 유효성 검증: 연결된 엣지 제거, 고아 노드 처리 등 미구현
+ *
+ * === 현재 Phase ===
+ * Phase 2: Snapshot + Command 패턴 적용
+ * - Snapshot: 불변 읽기 전용 인터페이스 제공
+ * - Command: apply(command) 단방향 흐름 (undo/redo 제외)
+ * - 직접 setter 메서드는 Phase 2+ 마이그레이션 대상
  */
 export class StateManager implements Disposable {
-	private persistentState: PersistentState;
-	private ephemeralState: EphemeralState;
+	private readonly persistentState: PersistentState;
+	private readonly ephemeralState: EphemeralState;
+	private eventBus?: EventBus;
 
 	constructor() {
 		// 초기 상태 설정
@@ -32,23 +48,42 @@ export class StateManager implements Disposable {
 	}
 
 	/**
+	 * EventBus 주입 (선택적)
+	 * - 주입되지 않아도 기존 동작을 유지해야 하므로 optional 로 둔다.
+	 */
+	public setEventBus(eventBus: EventBus): void {
+		this.eventBus = eventBus;
+	}
+
+	/**
 	 * 현재 상태의 읽기 전용 스냅샷을 반환
 	 * - 외부 소비자는 반환값을 수정하더라도 내부 상태에 영향 없음
+	 * - 내부 배열까지 deep freeze하여 불변성 보장
 	 */
 	getSnapshot(): StateSnapshot {
-		const nodes = Array.from(this.persistentState.graph.nodes.values()).map(
-			(node) => this.cloneNode(node)
+		const nodes = Object.freeze(
+			Array.from(this.persistentState.graph.nodes.values()).map(
+				(node) => this.cloneNode(node)
+			)
 		);
-		const edges = Array.from(this.persistentState.graph.edges.values()).map(
-			(edge) => ({ ...edge })
+		const edges = Object.freeze(
+			Array.from(this.persistentState.graph.edges.values()).map(
+				(edge) => ({ ...edge })
+			)
+		);
+		const pinnedNodeIds = Object.freeze(
+			Array.from(this.persistentState.pinnedNodes)
+		);
+		const collapsedNodeIds = Object.freeze(
+			Array.from(this.ephemeralState.collapsedNodes)
 		);
 
 		return Object.freeze({
 			nodes,
 			edges,
 			rootId: this.persistentState.graph.rootId,
-			pinnedNodeIds: Array.from(this.persistentState.pinnedNodes),
-			collapsedNodeIds: Array.from(this.ephemeralState.collapsedNodes),
+			pinnedNodeIds,
+			collapsedNodeIds,
 			selectedNodeId: this.ephemeralState.selectedNodeId,
 			editingNodeId: this.ephemeralState.editingNodeId,
 		});
@@ -109,27 +144,30 @@ export class StateManager implements Disposable {
 	}
 
 	// =========================================================================
-	// Getters
+	// Getters (Read-Only Interface)
 	// =========================================================================
 
 	/**
 	 * 노드 조회
+	 * - Readonly 반환으로 외부에서 내부 상태 직접 수정 방지
 	 */
-	getNode(nodeId: string): MindMapNode | undefined {
+	getNode(nodeId: NodeId): Readonly<MindMapNode> | undefined {
 		return this.persistentState.graph.nodes.get(nodeId);
 	}
 
 	/**
 	 * 모든 노드 조회
+	 * - Readonly 반환으로 외부에서 내부 상태 직접 수정 방지
 	 */
-	getAllNodes(): MindMapNode[] {
+	getAllNodes(): ReadonlyArray<Readonly<MindMapNode>> {
 		return Array.from(this.persistentState.graph.nodes.values());
 	}
 
 	/**
 	 * 루트 노드 조회
+	 * - Readonly 반환으로 외부에서 내부 상태 직접 수정 방지
 	 */
-	getRootNode(): MindMapNode | null {
+	getRootNode(): Readonly<MindMapNode> | null {
 		const rootId = this.persistentState.graph.rootId;
 		if (!rootId) return null;
 		return this.getNode(rootId) || null;
@@ -137,31 +175,38 @@ export class StateManager implements Disposable {
 
 	/**
 	 * 엣지 조회
+	 * - Readonly 반환으로 외부에서 내부 상태 직접 수정 방지
 	 */
-	getEdge(edgeId: string): MindMapEdge | undefined {
+	getEdge(edgeId: EdgeId): Readonly<MindMapEdge> | undefined {
 		return this.persistentState.graph.edges.get(edgeId);
 	}
 
 	/**
 	 * 선택된 노드 ID 조회
 	 */
-	getSelectedNodeId(): string | null {
+	getSelectedNodeId(): NodeId | null {
 		return this.ephemeralState.selectedNodeId;
 	}
 
 	/**
 	 * 편집 중인 노드 ID 조회
 	 */
-	getEditingNodeId(): string | null {
+	getEditingNodeId(): NodeId | null {
 		return this.ephemeralState.editingNodeId;
 	}
 
 	// =========================================================================
-	// Setters (Phase 2+: Command 패턴으로 변환 예정)
+	// Setters (Write-Only Interface)
+	// Phase 2+: Command 패턴으로 변환 예정
 	// =========================================================================
 
 	/**
 	 * 노드 추가
+	 *
+	 * 제약사항:
+	 * - 첫 번째 노드는 자동으로 루트 노드로 설정됨
+	 * - 중복 ID 검증 없음 (호출자 책임)
+	 * - 이벤트 발행 없음 (Phase 2+)
 	 */
 	addNode(node: MindMapNode): void {
 		this.persistentState.graph.nodes.set(node.id, node);
@@ -171,39 +216,57 @@ export class StateManager implements Disposable {
 			this.persistentState.graph.rootId = node.id;
 		}
 
-		// Phase 2+: 이벤트 발행
-		// this.emit('nodeCreated', node);
+		// 상태 변경 지점에 한정된 이벤트 발행 (주입되지 않은 경우 무시)
+		this.emitSafe('nodeCreated', { node });
 	}
 
 	/**
 	 * 노드 제거
+	 *
+	 * ⚠️ 경고: 현재 불완전한 구현
+	 * - 연결된 엣지 제거 안 됨 (고아 엣지 발생)
+	 * - 자식 노드 참조 업데이트 안 됨
+	 * - 루트 노드 제거 시 그래프 무효화 가능
+	 * - Phase 2+에서 완전한 구현 예정
 	 */
-	removeNode(nodeId: string): void {
+	removeNode(nodeId: NodeId): void {
 		this.persistentState.graph.nodes.delete(nodeId);
 
 		// Phase 2+: 연결된 엣지도 제거
-		// Phase 2+: 이벤트 발행
-		// this.emit('nodeDeleted', nodeId);
+
+		// 상태 변경 지점에 한정된 이벤트 발행 (주입되지 않은 경우 무시)
+		this.emitSafe('nodeDeleted', { nodeId });
 	}
 
 	/**
 	 * 노드 업데이트
+	 *
+	 * 제약사항:
+	 * - nodeId가 존재하지 않으면 조용히 실패 (undefined 반환)
+	 * - updates 유효성 검증 없음 (잘못된 값 방지 안 됨)
+	 * - childIds 등 관계 필드 수정 시 그래프 무결성 보장 안 됨
+	 * - updatedAt은 자동 갱신됨
 	 */
-	updateNode(nodeId: string, updates: Partial<MindMapNode>): void {
+	updateNode(nodeId: NodeId, updates: Partial<MindMapNode>): void {
 		const node = this.getNode(nodeId);
 		if (!node) return;
 
 		Object.assign(node, updates);
 		node.updatedAt = Date.now();
 
-		// Phase 2+: 이벤트 발행
-		// this.emit('nodeUpdated', node);
+		// 상태 변경 지점에 한정된 이벤트 발행 (주입되지 않은 경우 무시)
+		this.emitSafe('nodeUpdated', { node });
 	}
 
 	/**
 	 * 노드 선택
+	 *
+	 * 제약사항:
+	 * - nodeId 존재 여부 검증 안 됨
+	 * - 이전 선택은 lastSelectedNodeId에 자동 저장됨
+	 * - null 전달 시 선택 해제
 	 */
-	selectNode(nodeId: string | null): void {
+	selectNode(nodeId: NodeId | null): void {
 		if (this.ephemeralState.selectedNodeId) {
 			this.ephemeralState.lastSelectedNodeId = this.ephemeralState.selectedNodeId;
 		}
@@ -215,8 +278,14 @@ export class StateManager implements Disposable {
 
 	/**
 	 * 노드 편집 모드 진입
+	 *
+	 * 제약사항:
+	 * - nodeId 존재 여부 검증 안 됨
+	 * - 선택 상태와 독립적 (편집 중이어도 선택되지 않을 수 있음)
+	 * - null 전달 시 편집 모드 종료
+	 * - 동시에 여러 노드 편집 불가 (마지막 호출만 유효)
 	 */
-	setEditingNode(nodeId: string | null): void {
+	setEditingNode(nodeId: NodeId | null): void {
 		this.ephemeralState.editingNodeId = nodeId;
 
 		// Phase 2+: 이벤트 발행
@@ -242,6 +311,19 @@ export class StateManager implements Disposable {
 			position: { ...node.position },
 			childIds: [...node.childIds],
 		};
+	}
+
+	/**
+	 * EventBus에 안전하게 발행
+	 * - 설정되지 않았거나 핸들러 에러 발생 시 상태 변경에 영향을 주지 않는다.
+	 */
+	private emitSafe(eventName: string, payload: unknown): void {
+		if (!this.eventBus) return;
+		try {
+			this.eventBus.emit(eventName, payload);
+		} catch {
+			// swallow to keep StateManager behavior unaffected
+		}
 	}
 
 	// =========================================================================

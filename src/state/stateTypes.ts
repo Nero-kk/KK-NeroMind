@@ -1,4 +1,10 @@
-import { EphemeralState, MindMapEdge, MindMapNode, PersistentState } from '../types';
+import {
+	EphemeralState,
+	MindMapEdge,
+	MindMapNode,
+	NodeId,
+	PersistentState,
+} from '../types';
 
 /**
  * State 레이어에서 사용하는 커맨드 컨텍스트
@@ -25,11 +31,11 @@ export interface StateCommand {
 export interface StateSnapshot {
 	readonly nodes: ReadonlyArray<MindMapNode>;
 	readonly edges: ReadonlyArray<MindMapEdge>;
-	readonly rootId: string;
-	readonly pinnedNodeIds: ReadonlyArray<string>;
-	readonly collapsedNodeIds: ReadonlyArray<string>;
-	readonly selectedNodeId: string | null;
-	readonly editingNodeId: string | null;
+	readonly rootId: NodeId;
+	readonly pinnedNodeIds: ReadonlyArray<NodeId>;
+	readonly collapsedNodeIds: ReadonlyArray<NodeId>;
+	readonly selectedNodeId: NodeId | null;
+	readonly editingNodeId: NodeId | null;
 }
 
 /**
