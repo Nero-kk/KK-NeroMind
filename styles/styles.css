@@ -1,0 +1,239 @@
+/* ============================================================================
+   KK-NeroMind Styles
+   Architecture v4.0 § Apple Style Glassmorphism 기준
+   ============================================================================ */
+
+/* Phase 1: 기본 스타일 */
+
+:root {
+	/* Canvas */
+	--nm-canvas-bg: #f5f5f7;
+
+	/* Node */
+	--nm-node-bg: rgba(255, 255, 255, 0.72);
+	--nm-node-border: rgba(0, 0, 0, 0.08);
+	--nm-node-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+	--nm-node-color: #1d1d1f;
+	--nm-node-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+
+	/* Node Selected */
+	--nm-node-selected-border: #007aff;
+	--nm-node-selected-shadow: 0 0 0 4px rgba(0, 122, 255, 0.2);
+
+	/* Node Pinned */
+	--nm-node-pinned-bg: rgba(255, 149, 0, 0.15);
+	--nm-node-pinned-border: rgba(255, 149, 0, 0.3);
+
+	/* Edge */
+	--nm-edge-stroke: #d2d2d7;
+	--nm-edge-width: 2;
+
+	/* Button */
+	--nm-button-bg: #ffffff;
+	--nm-button-border: #d2d2d7;
+	--nm-button-icon: #86868b;
+	--nm-button-collapsed-bg: #ff3b30;
+	--nm-button-collapsed-icon: #ffffff;
+
+	/* Toolbar */
+	--nm-toolbar-bg: rgba(255, 255, 255, 0.9);
+	--nm-toolbar-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+	/* Minimap */
+	--nm-minimap-bg: rgba(255, 255, 255, 0.8);
+	--nm-minimap-border: rgba(0, 0, 0, 0.1);
+	--nm-minimap-viewport-stroke: #007aff;
+}
+
+/* ============================================================================
+   NeroMind View
+   ============================================================================ */
+
+.neromind-view {
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	background-color: var(--nm-canvas-bg);
+}
+
+.neromind-container {
+	position: relative;
+	width: 100%;
+	height: 100%;
+}
+
+/* ============================================================================
+   SVG Canvas
+   ============================================================================ */
+
+.neromind-canvas {
+	display: block;
+	width: 100%;
+	height: 100%;
+	user-select: none;
+}
+
+/* ============================================================================
+   Overlay Layer (HTML UI)
+   ============================================================================ */
+
+.neromind-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+}
+
+.neromind-overlay > * {
+	pointer-events: auto;
+}
+
+/* ============================================================================
+   Nodes
+   ============================================================================ */
+
+.neromind-node {
+	cursor: pointer;
+	transition: transform 0.2s ease;
+}
+
+.neromind-node:hover {
+	transform: scale(1.02);
+}
+
+/* ============================================================================
+   Edges
+   ============================================================================ */
+
+.neromind-edge {
+	pointer-events: none;
+}
+
+/* ============================================================================
+   Glassmorphism Effects
+   ============================================================================ */
+
+/* Safari 지원 */
+@supports (-webkit-backdrop-filter: blur(20px)) {
+	.neromind-node rect {
+		-webkit-backdrop-filter: blur(20px) saturate(180%);
+		backdrop-filter: blur(20px) saturate(180%);
+	}
+}
+
+/* ============================================================================
+   Toolbar (Phase 3)
+   ============================================================================ */
+
+.neromind-toolbar {
+	position: absolute;
+	top: 12px;
+	left: 12px;
+	display: flex;
+	gap: 4px;
+	background: var(--nm-toolbar-bg);
+	backdrop-filter: blur(20px);
+	border-radius: 12px;
+	padding: 8px;
+	box-shadow: var(--nm-toolbar-shadow);
+	pointer-events: auto;
+}
+
+.neromind-toolbar-button {
+	width: 32px;
+	height: 32px;
+	border: none;
+	background: transparent;
+	border-radius: 6px;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--nm-button-icon);
+	transition: background 0.2s ease;
+}
+
+.neromind-toolbar-button:hover {
+	background: rgba(0, 0, 0, 0.05);
+}
+
+.neromind-toolbar-button:active {
+	background: rgba(0, 0, 0, 0.1);
+}
+
+/* ============================================================================
+   Minimap (Phase 4)
+   ============================================================================ */
+
+.neromind-minimap {
+	position: absolute;
+	bottom: 12px;
+	right: 12px;
+	width: 200px;
+	height: 150px;
+	background: var(--nm-minimap-bg);
+	backdrop-filter: blur(10px);
+	border-radius: 8px;
+	border: 1px solid var(--nm-minimap-border);
+	pointer-events: auto;
+	cursor: pointer;
+}
+
+/* ============================================================================
+   Dark Theme (Phase 4)
+   ============================================================================ */
+
+.theme-dark {
+	--nm-canvas-bg: #1e1e1e;
+	--nm-node-bg: rgba(40, 40, 40, 0.72);
+	--nm-node-border: rgba(255, 255, 255, 0.08);
+	--nm-node-color: #e4e4e4;
+	--nm-edge-stroke: #3a3a3a;
+	--nm-toolbar-bg: rgba(40, 40, 40, 0.9);
+	--nm-minimap-bg: rgba(40, 40, 40, 0.8);
+	--nm-minimap-border: rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================================================
+   Responsive
+   ============================================================================ */
+
+@media (max-width: 768px) {
+	.neromind-toolbar {
+		top: 8px;
+		left: 8px;
+		padding: 6px;
+	}
+
+	.neromind-minimap {
+		width: 150px;
+		height: 112px;
+	}
+}
+
+/* ============================================================================
+   Animations
+   ============================================================================ */
+
+@keyframes fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+.neromind-node {
+	animation: fade-in 0.2s ease;
+}
+
+/* ============================================================================
+   Ribbon Icon
+   ============================================================================ */
+
+.neromind-ribbon-icon {
+	color: var(--icon-color);
+}

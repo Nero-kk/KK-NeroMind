@@ -1,35 +1,27 @@
+# Build outputs
+main.js
+main.js.map
+*.js.map
+
 # Dependencies
 node_modules/
 
-# Claude Code
-.claude/
-
-# Build output (keep main.js and styles.css for Obsidian plugin distribution)
-# main.js
-# styles.css
-main.js.map
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
+# Development
 .DS_Store
-Thumbs.db
-
-# Debug
 *.log
 npm-debug.log*
 
-# Environment
-.env
-.env.local
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# TypeScript
-*.tsbuildinfo
+# Temporary files
+tmp*
+temp*
+tmpclaude-*
 
-# Optional npm cache
-.npm
-.eslintcache
+# OS
+Thumbs.db
