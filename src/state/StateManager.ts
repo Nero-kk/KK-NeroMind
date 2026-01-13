@@ -248,7 +248,7 @@ export class StateManager implements Disposable {
 	 * - updatedAt은 자동 갱신됨
 	 */
 	updateNode(nodeId: NodeId, updates: Partial<MindMapNode>): void {
-		const node = this.getNode(nodeId);
+		const node = this.persistentState.graph.nodes.get(nodeId);
 		if (!node) return;
 
 		Object.assign(node, updates);

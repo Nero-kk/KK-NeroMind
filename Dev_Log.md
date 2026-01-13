@@ -2528,9 +2528,479 @@ class NeroMindPlugin extends Plugin {
 | 2026-01-12 | **Phase 3.0: EventBus 단일 파일 구현 완료** | 최소 연결부로 설계, 실패 시 즉시 제거 가능 |
 | 2026-01-12 | **Phase 3.0: StateManager EventBus 통합 완료** | setter 기반 선택적 주입, emitSafe로 방어적 호출 |
 | 2026-01-12 | **Phase 3.0: History 레이어 진입 허가** | Undo-only, Inverse Operation 패턴, 외부 래퍼 구조 |
+| 2026-01-13 | **Phase 3.0 MVP 완료: HistoryManager 구현** | Wrapper Pattern, Inverse Operation, MAX_HISTORY=10 |
+| 2026-01-13 | **Phase 3.0 MVP 완료: UndoableCommand 인터페이스** | execute + undo 쌍, Inverse Operation 패턴 |
+| 2026-01-13 | **Phase 3.1 완료: NeroMindView History 통합** | StateManager + HistoryManager 초기화, Undo UI, 단축키 |
+| 2026-01-13 | **Phase 3.2 완료: CreateNodeCommand 연결** | historyManager.execute(command) 호출, 테스트 코드 |
+| 2026-01-13 | **Phase 3.3 완료: 실제 사용자 액션 연결** | 더블클릭으로 노드 생성, 테스트 코드 제거 |
+
+---
+
+## 🔵 Phase 3.0 MVP - HistoryManager & UndoableCommand (2026-01-13)
+
+### ✅ 완료된 구현
+
+#### 1. **UndoableCommand 인터페이스** (`src/history/UndoableCommand.ts`)
+
+**구조:**
+```typescript
+interface UndoableCommand {
+  execute(context: StateContext): void;  // 순방향: 작업 실행
+  undo(context: StateContext): void;     // 역방향: 작업 취소 (Inverse Operation)
+  description: string;                   // 사용자 라벨 ("Add node" 등)
+}
+```
+
+**핵심 설계:**
+- Inverse Operation 패턴: `execute()`와 `undo()`는 정확한 역관계
+- StateContext만 접근: EventBus, Renderer 참조 금지
+- 메모리 스냅샷 금지: 필요한 데이터만 커맨드에 보존
+
+---
+
+#### 2. **HistoryManager 클래스** (`src/history/HistoryManager.ts`)
+
+**핵심 메서드:**
+
+```typescript
+// execute(command): 커맨드 실행 및 히스토리 저장
+execute(command: UndoableCommand): StateSnapshot {
+  const snapshot = this.stateManager.apply(command);  // StateManager.apply() 호출
+  this.commandQueue.push(command);                     // 히스토리 저장
+  if (this.commandQueue.length > this.MAX_HISTORY) {   // MAX_HISTORY=10 제한
+    this.commandQueue.shift();                         // FIFO로 가장 오래된 것 제거
+  }
+  return snapshot;
+}
+
+// undo(): 마지막 작업 취소
+undo(): StateSnapshot {
+  if (!this.canUndo()) throw new Error('No history to undo');
+
+  const command = this.commandQueue.pop();             // 히스토리에서 제거
+  const undoWrapper = {
+    description: `Undo: ${command.description}`,
+    execute: (context) => command.undo(context)        // Inverse Operation
+  };
+
+  return this.stateManager.apply(undoWrapper);         // StateManager.apply()로 실행
+}
+
+// canUndo(): 취소 가능 여부
+canUndo(): boolean {
+  return this.commandQueue.length > 0;
+}
+```
+
+**Wrapper Pattern:**
+- `constructor(stateManager: StateManager)`: StateManager를 외부에서 감싼다
+- `apply(command)` 호출로만 상호작용 (StateManager 내부 상태 직접 조작 금지)
+- HistoryManager 제거 시 StateManager는 독립적으로 작동
+
+**제약사항:**
+- EventBus 통합 금지 (Phase 3.0 범위 초과)
+- Redo 기능 금지 (Undo-only 정책)
+- 메모리 스냅샷 저장 금지 (5MB 절약)
+
+---
+
+#### 3. **예제 커맨드 5개** (`src/history/examples.ts`)
+
+**1. AddNodeCommand** - 노드 추가
+```typescript
+execute(context): context.graph.nodes.set(id, node)
+undo(context):    context.graph.nodes.delete(id)
+```
+
+**2. RemoveNodeCommand** - 노드 제거
+```typescript
+execute(context): savedNode = get(); delete()
+undo(context):    set(savedNode)
+```
+
+**3. UpdateNodeCommand** - 노드 업데이트
+```typescript
+execute(context): savedValues = get(); assign(updates)
+undo(context):    assign(savedValues)
+```
+
+**4. MoveNodeCommand** - 노드 이동
+```typescript
+execute(context): oldPosition = position; position = newPosition
+undo(context):    position = oldPosition
+```
+
+**5. SelectNodeCommand** - 노드 선택 (Ephemeral)
+```typescript
+execute(context): selectedNodeId = nodeId (히스토리 미대상)
+undo(context):    selectedNodeId = previousId
+```
+
+---
+
+### 📚 문서화
+
+- **INTEGRATION_GUIDE.md** (500+ lines): 설계 원칙, API, 통합 방법, FAQ
+- **SELF_VALIDATION_CHECKLIST.md** (400+ lines): 11개 섹션 검증
+- **README.md**: 개요, 빠른 시작, 체크리스트
+- **QUICK_REFERENCE.md**: 1페이지 치트시트
+
+---
+
+## 🟣 Phase 3.1 - NeroMindView History 통합 (2026-01-13)
+
+### ✅ 추가된 함수
+
+#### 1. **initializeStateManagement()** - State Management 초기화
+
+**목적:** EventBus → StateManager → HistoryManager → Renderer 순서로 초기화
+
+**핵심 로직:**
+```typescript
+private initializeStateManagement(): void {
+  // 1. EventBus 초기화 (선택적)
+  this.eventBus = new EventBus();
+
+  // 2. StateManager 초기화 및 EventBus 주입
+  this.stateManager = new StateManager();
+  this.stateManager.setEventBus(this.eventBus);  // 선택적 주입
+  this.addDisposable(this.stateManager);
+
+  // 3. HistoryManager 초기화 (Wrapper Pattern)
+  this.historyManager = new HistoryManager(this.stateManager);
+  this.addDisposable(this.historyManager);
+
+  // 4. Renderer 초기화
+  if (this.svgElement) {
+    this.renderer = new Renderer(this.svgElement);
+    this.addDisposable(this.renderer);
+  }
+}
+```
+
+**책임:**
+- StateManager 래핑을 HistoryManager로만 수행
+- disposables 배열에 모두 등록 (onClose에서 역순 정리)
+
+---
+
+#### 2. **createUndoButton()** - Undo 버튼 생성
+
+**목적:** SVG 오버레이에 Undo 버튼 추가
+
+**핵심 로직:**
+```typescript
+private createUndoButton(): void {
+  const overlayEl = this.containerEl.querySelector('.neromind-overlay');
+
+  this.undoButtonEl = overlayEl.createEl('button', {
+    text: 'Undo',
+    cls: 'neromind-undo-button'
+  });
+
+  // 스타일 적용 (우하단 고정)
+  this.undoButtonEl.style.position = 'absolute';
+  this.undoButtonEl.style.bottom = '20px';
+  this.undoButtonEl.style.right = '20px';
+  this.undoButtonEl.style.pointerEvents = 'auto';  // overlay는 pointer-events: none
+
+  // 클릭 이벤트 연결
+  this.undoButtonEl.addEventListener('click', () => this.handleUndo());
+
+  // 초기 상태 설정
+  this.updateUndoButton();
+}
+```
+
+**위치:** 화면 우하단, overlay 위에 띄움
+
+---
+
+#### 3. **handleUndo()** - Undo 처리
+
+**목적:** canUndo() 확인 후 undo() 호출
+
+**핵심 로직:**
+```typescript
+private handleUndo(): void {
+  if (!this.historyManager || !this.historyManager.canUndo()) {
+    console.log('Cannot undo: no history available');
+    return;
+  }
+
+  try {
+    const snapshot = this.historyManager.undo();  // Inverse Operation 실행
+    this.renderSnapshot(snapshot);                // 스냅샷 렌더링
+    this.updateUndoButton();                      // UI 갱신
+    console.log('Undo successful');
+  } catch (error) {
+    console.error('Undo failed:', error);
+  }
+}
+```
+
+**안전성:**
+- null 체크 (historyManager)
+- canUndo() 확인 (에러 방지)
+- try-catch 에러 처리
+
+---
+
+#### 4. **updateUndoButton()** - Undo 버튼 상태 갱신
+
+**목적:** canUndo() 결과에 따라 버튼 활성화/비활성화
+
+**핵심 로직:**
+```typescript
+private updateUndoButton(): void {
+  if (!this.undoButtonEl || !this.historyManager) return;
+
+  const canUndo = this.historyManager.canUndo();
+  this.undoButtonEl.disabled = !canUndo;
+
+  // 비활성화 시 스타일 변경
+  if (!canUndo) {
+    this.undoButtonEl.style.opacity = '0.5';
+    this.undoButtonEl.style.cursor = 'not-allowed';
+  } else {
+    this.undoButtonEl.style.opacity = '1';
+    this.undoButtonEl.style.cursor = 'pointer';
+  }
+}
+```
+
+**시각적 피드백:**
+- canUndo=true: 활성화 (opacity 1, cursor: pointer)
+- canUndo=false: 비활성화 (opacity 0.5, cursor: not-allowed)
+
+---
+
+#### 5. **registerShortcuts()** - 단축키 등록
+
+**목적:** Ctrl/Cmd + Z로 Undo 트리거
+
+**핵심 로직:**
+```typescript
+private registerShortcuts(): void {
+  this.registerDomEvent(document, 'keydown', (evt: KeyboardEvent) => {
+    // Ctrl/Cmd + Z (Shift 없음 = Undo만, Redo 차단)
+    if ((evt.ctrlKey || evt.metaKey) && evt.key === 'z' && !evt.shiftKey) {
+      evt.preventDefault();
+      this.handleUndo();
+    }
+  });
+}
+```
+
+**교차 플랫폼:**
+- Windows/Linux: Ctrl + Z
+- macOS: Cmd + Z
+- Redo는 Shift 키 체크로 차단
+
+---
+
+## 🟠 Phase 3.2 - CreateNodeCommand 연결 (2026-01-13)
+
+### ✅ 추가된 함수
+
+#### **createTestNode()** - 테스트 노드 자동 생성
+
+**목적:** Undo 동작 검증용 테스트 코드
+
+**핵심 로직:**
+```typescript
+private createTestNode(): void {
+  if (!this.historyManager) return;
+
+  // 테스트 노드 생성 (고정 위치)
+  const testNode: MindMapNode = {
+    id: 'test-node-1',
+    content: 'Test Node (Press Ctrl/Cmd+Z to undo)',
+    position: { x: 400, y: 350 },
+    // ...
+  };
+
+  // CreateNodeCommand 사용
+  const command = new CreateNodeCommand(testNode);
+
+  try {
+    // historyManager.execute() → commandQueue.push()
+    const snapshot = this.historyManager.execute(command);
+    console.log('Test node created via historyManager.execute():', {
+      nodeCount: snapshot.nodes.length,
+      canUndo: this.historyManager.canUndo()
+    });
+
+    this.updateUndoButton();
+  } catch (error) {
+    console.error('Failed to create test node:', error);
+  }
+}
+```
+
+**용도:**
+- Phase 3.2 Undo 동작 검증
+- 뷰 열 때 자동으로 1개 노드 생성
+- Ctrl/Cmd+Z로 노드 제거 확인 가능
+
+**Phase 3.3에서 제거됨** (실제 사용자 액션으로 대체)
+
+---
+
+## 🟢 Phase 3.3 - 실제 사용자 액션 연결 (2026-01-13)
+
+### ❌ 제거된 함수
+
+**createTestNode()** (52줄) - 자동 테스트 노드 생성 제거
+- 테스트용 하드코딩 제거
+- 실제 사용자 인터랙션으로 대체
+
+---
+
+### ✅ 추가된 함수
+
+#### 1. **registerCanvasEvents()** - 캔버스 이벤트 등록
+
+**목적:** SVG 캔버스 더블클릭 이벤트 핸들러 등록
+
+**핵심 로직:**
+```typescript
+private registerCanvasEvents(): void {
+  if (!this.svgElement) {
+    console.warn('SVG element not initialized');
+    return;
+  }
+
+  // 더블클릭 이벤트: 클릭 위치에 노드 생성
+  this.registerDomEvent(this.svgElement, 'dblclick', (evt: MouseEvent) => {
+    this.handleCanvasDoubleClick(evt);
+  });
+}
+```
+
+**책임:**
+- DOM 이벤트 리스닝 (Obsidian API registerDomEvent 사용)
+- handleCanvasDoubleClick 콜백 연결
+
+---
+
+#### 2. **handleCanvasDoubleClick()** - 실제 사용자 액션 처리 (핵심)
+
+**목적:** 캔버스 더블클릭 위치에 노드 생성 및 히스토리 기록
+
+**핵심 로직:**
+```typescript
+private handleCanvasDoubleClick(evt: MouseEvent): void {
+  if (!this.historyManager || !this.svgElement) return;
+
+  // 1. 더블클릭 위치 계산 (SVG 좌표계)
+  const rect = this.svgElement.getBoundingClientRect();
+  const x = evt.clientX - rect.left;    // 상대 좌표
+  const y = evt.clientY - rect.top;
+
+  // 2. 노드 ID 생성 (타임스탬프 기반, 유니크성 보장)
+  const nodeId = `node-${Date.now()}`;
+
+  // 3. MindMapNode 객체 생성 (동적)
+  const newNode: MindMapNode = {
+    id: nodeId,
+    content: 'New Node',
+    position: { x, y },              // 클릭 위치
+    parentId: null,
+    childIds: [],
+    direction: null,
+    isPinned: false,
+    isCollapsed: false,
+    linkedNotePath: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+
+  // 4. CreateNodeCommand 생성 (Phase 3.0)
+  const command = new CreateNodeCommand(newNode);
+
+  try {
+    // 5. historyManager.execute(command)
+    //    → StateManager.apply(command)
+    //    → command.execute(context)
+    //    → context.persistent.graph.nodes.set(nodeId, newNode)
+    //    → commandQueue.push(command)
+    const snapshot = this.historyManager.execute(command);
+    console.log('Node created at position:', {
+      x, y, nodeId,
+      canUndo: this.historyManager.canUndo()
+    });
+
+    // 6. Undo 버튼 활성화
+    this.updateUndoButton();
+  } catch (error) {
+    console.error('Failed to create node:', error);
+  }
+}
+```
+
+**핵심 포인트:**
+- **좌표계 변환**: evt.clientX - rect.left (화면 좌표 → SVG 로컬 좌표)
+- **유니크 ID**: `node-${Date.now()}` (타임스탬프 기반)
+- **Wrapper Pattern 준수**: historyManager.execute()만 호출, StateManager 직접 조작 금지
+- **Inverse Operation 보증**: CreateNodeCommand.undo()로 정확히 역작동
+
+**사용자 흐름:**
+1. 사용자: SVG 캔버스 임의의 위치 더블클릭
+2. handleCanvasDoubleClick() 트리거
+3. MindMapNode 생성 → CreateNodeCommand 래핑 → historyManager.execute()
+4. StateManager.apply(command) → command.execute(context)
+5. context.persistent.graph.nodes.set() → 노드 추가됨
+6. commandQueue.push(command) → 히스토리 저장
+7. updateUndoButton() → Undo 버튼 활성화
+8. 사용자: Ctrl/Cmd+Z 입력
+9. handleUndo() → historyManager.undo()
+10. command.undo(context) → context.persistent.graph.nodes.delete()
+11. 노드 제거됨
+
+---
+
+## 📊 Phase 3.0~3.3 통합 요약
+
+| Phase | 담당 파일 | 추가 함수 | 제거 함수 | 핵심 기능 |
+|-------|----------|---------|---------|---------|
+| **3.0** | HistoryManager.ts, UndoableCommand.ts, examples.ts | `execute(), undo(), canUndo()` | - | Wrapper Pattern, Inverse Operation, MAX_HISTORY=10 |
+| **3.1** | NeroMindView.ts | `initializeStateManagement()`, `createUndoButton()`, `handleUndo()`, `updateUndoButton()`, `registerShortcuts()` | - | State 초기화, Undo UI, 단축키 |
+| **3.2** | NeroMindView.ts | `createTestNode()` | - | 테스트 노드 자동 생성 (검증용) |
+| **3.3** | NeroMindView.ts | `registerCanvasEvents()`, `handleCanvasDoubleClick()` | `createTestNode()` | 실제 사용자 액션(더블클릭) 연결 |
+
+---
+
+## 🚀 앞으로 구현해야 할 기능
+
+### Phase 3.4 - Renderer 통합 (예정)
+- `Renderer.render(snapshot)` 메서드 구현
+- 노드 시각화 (SVG 렌더링)
+- 엣지 시각화 (연결선 렌더링)
+- 실시간 업데이트 (RAF 루프)
+
+### Phase 3.5 - 더 많은 커맨드 추가 (예정)
+- `DeleteNodeCommand` - 노드 삭제 (엣지 처리)
+- `CreateEdgeCommand` - 엣지 생성
+- `DeleteEdgeCommand` - 엣지 삭제
+- `PinNodeCommand` - 노드 핀 고정
+- `RenameNodeCommand` - 노드 텍스트 변경
+
+### Phase 3.6 - 다중 선택 및 배치 작업 (예정)
+- `SelectMultipleNodesCommand` - 여러 노드 선택
+- `BatchMoveNodesCommand` - 여러 노드 한 번에 이동
+- `BatchDeleteNodesCommand` - 여러 노드 한 번에 삭제
+
+### Phase 4 - 고급 기능 (예정)
+- **AutoAligner**: 노드 자동 정렬
+- **MiniMap**: 미니맵 뷰
+- **LOD (Level of Detail)**: 줌 레벨 별 렌더링 최적화
+- **Persistence**: 파일 저장/로드
+- **Keyboard Shortcuts**: 단축키 커스터마이징
+- **Themes**: 다크모드, 라이트모드
 
 ---
 
 **문서 끝**
 
-**최종 업데이트:** 2026-01-12 (Phase 3.0 MVP 초기 구현 완료 - EventBus 및 StateManager 통합)
+**최종 업데이트:** 2026-01-13 (Phase 3.3 완료 - 실제 사용자 액션 연결, 더블클릭으로 노드 생성)

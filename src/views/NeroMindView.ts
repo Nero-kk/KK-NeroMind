@@ -1,6 +1,12 @@
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import type NeroMindPlugin from '../main';
-import { Disposable } from '../types';
+import { Disposable, MindMapNode } from '../types';
+import { StateSnapshot } from '../state/stateTypes';
+import { StateManager } from '../state/StateManager';
+import { HistoryManager } from '../history/HistoryManager';
+import { EventBus } from '../events/EventBus';
+import { Renderer } from '../rendering/Renderer';
+import { CreateNodeCommand } from '../history/CreateNodeCommand';
 
 export const VIEW_TYPE_NEROMIND = 'neromind-view';
 
@@ -8,17 +14,31 @@ export const VIEW_TYPE_NEROMIND = 'neromind-view';
  * NeroMind 마인드맵 뷰
  *
  * Phase 1: 기본 뷰 골격 및 SVG 캔버스 초기화
- * Phase 2+: 노드 생성, 인터랙션, 렌더링 등 추가
+ * Phase 2: Snapshot + Command 패턴 적용
+ * Phase 3.1: HistoryManager 통합, Undo UI 추가
+ * Phase 3.2: CreateNodeCommand 실제 연결, Undo 동작 검증
+ * Phase 3.3: 테스트 코드 제거, 실제 사용자 액션(더블클릭) 연결
  *
  * 주의사항:
  * - DOM 조작은 onOpen() 이후에만 수행
  * - 모든 리소스는 onClose()에서 정리
+ * - HistoryManager는 StateManager의 Wrapper
+ * - 사용자 작업은 historyManager.execute(command)로만 실행
  */
 export class NeroMindView extends ItemView {
 	plugin: NeroMindPlugin;
 	private svgElement: SVGSVGElement | null = null;
 	private disposables: Disposable[] = [];
 	private mindmapContainerEl: HTMLElement | null = null;
+
+	// Phase 3.1: State Management
+	private stateManager: StateManager | null = null;
+	private historyManager: HistoryManager | null = null;
+	private eventBus: EventBus | null = null;
+	private renderer: Renderer | null = null;
+
+	// Phase 3.1: UI Elements
+	private undoButtonEl: HTMLButtonElement | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: NeroMindPlugin) {
 		super(leaf);
@@ -49,10 +69,10 @@ export class NeroMindView extends ItemView {
 	/**
 	 * 뷰 열기
 	 *
-	 * Phase 1 주의사항:
-	 * - SVG 요소는 createElementNS 사용
-	 * - 좌표계 초기화 (Screen/Canvas/World 구분)
-	 * - 루트노드는 화면 중앙에 배치
+	 * Phase 3.1 주의사항:
+	 * - EventBus → StateManager → HistoryManager 순서
+	 * - StateManager.setEventBus() 선택적 주입
+	 * - HistoryManager는 StateManager를 Wrapper로 감싼다
 	 */
 	async onOpen(): Promise<void> {
 		console.log('Opening NeroMind view...');
@@ -67,12 +87,20 @@ export class NeroMindView extends ItemView {
 		// SVG 캔버스 초기화
 		this.initializeSVGCanvas();
 
+		// Phase 3.1: State Management 초기화
+		this.initializeStateManagement();
+
+		// Phase 3.1: Undo 버튼 생성
+		this.createUndoButton();
+
+		// Phase 3.1: 단축키 등록
+		this.registerShortcuts();
+
+		// Phase 3.3: 캔버스 이벤트 등록 (노드 생성 트리거)
+		this.registerCanvasEvents();
+
 		// Phase 1: 기본 환영 메시지
 		this.renderWelcomeMessage();
-
-		// Phase 2+: Renderer, StateManager 등 초기화
-		// this.initializeRenderers();
-		// this.initializeStateManager();
 	}
 
 	/**
@@ -140,6 +168,274 @@ export class NeroMindView extends ItemView {
 	}
 
 	/**
+	 * Phase 3.1: State Management 초기화
+	 *
+	 * 책임:
+	 * - EventBus 생성
+	 * - StateManager 생성 및 EventBus 주입 (선택적)
+	 * - HistoryManager 생성 (Wrapper Pattern)
+	 * - Renderer 생성
+	 * - disposables 배열에 모두 등록
+	 *
+	 * 비책임:
+	 * - Command 실행
+	 * - UI 갱신
+	 */
+	private initializeStateManagement(): void {
+		// EventBus 초기화 (선택적)
+		this.eventBus = new EventBus();
+
+		// StateManager 초기화
+		this.stateManager = new StateManager();
+		this.stateManager.setEventBus(this.eventBus); // 선택적 주입
+		this.addDisposable(this.stateManager);
+
+		// HistoryManager 초기화 (Wrapper Pattern)
+		this.historyManager = new HistoryManager(this.stateManager);
+		this.addDisposable(this.historyManager);
+
+		// Renderer 초기화
+		if (this.svgElement) {
+			this.renderer = new Renderer(this.svgElement);
+			this.addDisposable(this.renderer);
+		}
+
+		console.log('State management initialized');
+	}
+
+	/**
+	 * Phase 3.1: Undo 버튼 생성
+	 *
+	 * 책임:
+	 * - HTML 버튼 요소 생성
+	 * - 스타일 적용
+	 * - 클릭 이벤트 연결
+	 * - 초기 활성화 상태 설정
+	 *
+	 * 비책임:
+	 * - Undo 로직 실행 (handleUndo 책임)
+	 */
+	private createUndoButton(): void {
+		const overlayEl = this.containerEl.querySelector('.neromind-overlay');
+		if (!overlayEl) {
+			console.warn('Overlay element not found');
+			return;
+		}
+
+		this.undoButtonEl = overlayEl.createEl('button', {
+			text: 'Undo',
+			cls: 'neromind-undo-button'
+		});
+
+		// 스타일 적용
+		this.undoButtonEl.style.position = 'absolute';
+		this.undoButtonEl.style.bottom = '20px';
+		this.undoButtonEl.style.right = '20px';
+		this.undoButtonEl.style.padding = '8px 16px';
+		this.undoButtonEl.style.border = '1px solid rgba(0, 0, 0, 0.1)';
+		this.undoButtonEl.style.borderRadius = '8px';
+		this.undoButtonEl.style.background = 'rgba(255, 255, 255, 0.9)';
+		this.undoButtonEl.style.cursor = 'pointer';
+		this.undoButtonEl.style.pointerEvents = 'auto'; // overlay는 pointer-events: none
+		this.undoButtonEl.style.fontSize = '14px';
+		this.undoButtonEl.style.fontFamily = '-apple-system, BlinkMacSystemFont, sans-serif';
+
+		// 클릭 이벤트 연결
+		this.undoButtonEl.addEventListener('click', () => this.handleUndo());
+
+		// 초기 상태 설정
+		this.updateUndoButton();
+	}
+
+	/**
+	 * Phase 3.1: Undo 처리
+	 *
+	 * 책임:
+	 * - canUndo() 확인
+	 * - historyManager.undo() 호출
+	 * - snapshot 렌더링
+	 * - UI 갱신
+	 * - 에러 처리
+	 *
+	 * 비책임:
+	 * - StateManager 직접 조작
+	 * - Command 실행 (execute는 사용자 작업용)
+	 */
+	private handleUndo(): void {
+		if (!this.historyManager || !this.historyManager.canUndo()) {
+			console.log('Cannot undo: no history available');
+			return;
+		}
+
+		try {
+			const snapshot = this.historyManager.undo();
+			this.renderSnapshot(snapshot);
+			this.updateUndoButton();
+			console.log('Undo successful');
+		} catch (error) {
+			console.error('Undo failed:', error);
+		}
+	}
+
+	/**
+	 * Phase 3.1: Undo 버튼 상태 갱신
+	 *
+	 * 책임:
+	 * - canUndo() 결과에 따라 버튼 활성화/비활성화
+	 * - 버튼 텍스트 설정
+	 *
+	 * 비책임:
+	 * - Undo 로직 실행
+	 */
+	private updateUndoButton(): void {
+		if (!this.undoButtonEl || !this.historyManager) {
+			return;
+		}
+
+		const canUndo = this.historyManager.canUndo();
+		this.undoButtonEl.disabled = !canUndo;
+
+		// 비활성화 시 스타일 변경
+		if (!canUndo) {
+			this.undoButtonEl.style.opacity = '0.5';
+			this.undoButtonEl.style.cursor = 'not-allowed';
+		} else {
+			this.undoButtonEl.style.opacity = '1';
+			this.undoButtonEl.style.cursor = 'pointer';
+		}
+	}
+
+	/**
+	 * Phase 3.1: Snapshot 렌더링
+	 *
+	 * 책임:
+	 * - StateSnapshot을 Renderer에 전달
+	 * - 콘솔 로깅 (디버깅용)
+	 *
+	 * 비책임:
+	 * - Renderer 내부 로직 수정
+	 * - StateManager 상태 직접 조작
+	 */
+	private renderSnapshot(snapshot: StateSnapshot): void {
+		console.log('Rendering snapshot:', {
+			nodeCount: snapshot.nodes.length,
+			edgeCount: snapshot.edges.length,
+			rootId: snapshot.rootId
+		});
+
+		// Phase 3.1: Renderer는 snapshot 소비만
+		// 실제 렌더링 로직은 Renderer 내부에서 처리
+		if (this.renderer) {
+			// this.renderer.render(snapshot);
+			// Phase 1 Renderer는 아직 render() 메서드 미구현
+			console.log('Renderer available but render() not yet implemented');
+		}
+	}
+
+	/**
+	 * Phase 3.1: 단축키 등록
+	 *
+	 * 책임:
+	 * - Ctrl/Cmd + Z → Undo
+	 * - 이벤트 전파 방지
+	 *
+	 * 비책임:
+	 * - Redo (Shift + Ctrl/Cmd + Z 금지)
+	 */
+	private registerShortcuts(): void {
+		this.registerDomEvent(document, 'keydown', (evt: KeyboardEvent) => {
+			// Ctrl/Cmd + Z (Undo만 허용, Shift 없음)
+			if ((evt.ctrlKey || evt.metaKey) && evt.key === 'z' && !evt.shiftKey) {
+				evt.preventDefault();
+				this.handleUndo();
+			}
+		});
+	}
+
+	/**
+	 * Phase 3.3: 캔버스 이벤트 등록
+	 *
+	 * 책임:
+	 * - SVG 캔버스 더블클릭 이벤트 등록
+	 * - 더블클릭 위치에 노드 생성
+	 *
+	 * 비책임:
+	 * - 렌더링 (Renderer 책임)
+	 * - 이벤트 발행 (StateManager 책임)
+	 */
+	private registerCanvasEvents(): void {
+		if (!this.svgElement) {
+			console.warn('SVG element not initialized');
+			return;
+		}
+
+		// 더블클릭 이벤트: 클릭 위치에 노드 생성
+		// SVGSVGElement는 registerDomEvent의 타입에 포함되지 않으므로 EventTarget 인터페이스 사용
+		this.svgElement.addEventListener('dblclick', (evt: Event) => {
+			if (evt instanceof MouseEvent) {
+				this.handleCanvasDoubleClick(evt);
+			}
+		});
+	}
+
+	/**
+	 * Phase 3.3: 캔버스 더블클릭 처리 (실제 사용자 액션)
+	 *
+	 * 책임:
+	 * - 더블클릭 위치 계산
+	 * - MindMapNode 생성
+	 * - CreateNodeCommand로 래핑
+	 * - historyManager.execute() 호출
+	 *
+	 * 비책임:
+	 * - StateManager 직접 조작
+	 * - 렌더링 (Renderer 책임)
+	 */
+	private handleCanvasDoubleClick(evt: MouseEvent): void {
+		if (!this.historyManager || !this.svgElement) {
+			console.warn('HistoryManager or SVG element not initialized');
+			return;
+		}
+
+		// 클릭 위치 계산 (SVG 좌표계)
+		const rect = this.svgElement.getBoundingClientRect();
+		const x = evt.clientX - rect.left;
+		const y = evt.clientY - rect.top;
+
+		// 노드 ID 생성 (타임스탬프 기반)
+		const nodeId = `node-${Date.now()}`;
+
+		// 노드 생성
+		const newNode: MindMapNode = {
+			id: nodeId,
+			content: 'New Node',
+			position: { x, y },
+			parentId: null,
+			childIds: [],
+			direction: null,
+			isPinned: false,
+			isCollapsed: false,
+			linkedNotePath: null,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+
+		// CreateNodeCommand 사용
+		const command = new CreateNodeCommand(newNode);
+
+		try {
+			// historyManager.execute() → StateManager.apply() → commandQueue.push()
+			const snapshot = this.historyManager.execute(command);
+			console.log('Node created at position:', { x, y, nodeId, canUndo: this.historyManager.canUndo() });
+
+			// Undo 버튼 활성화
+			this.updateUndoButton();
+		} catch (error) {
+			console.error('Failed to create node:', error);
+		}
+	}
+
+	/**
 	 * Phase 1 환영 메시지
 	 */
 	private renderWelcomeMessage(): void {
@@ -199,10 +495,10 @@ export class NeroMindView extends ItemView {
 	/**
 	 * 뷰 닫기
 	 *
-	 * Phase 1 주의사항:
-	 * - 모든 disposables 역순 정리
-	 * - 이벤트 리스너 제거
-	 * - DOM 요소 detach
+	 * Phase 3.1 주의사항:
+	 * - disposables 배열이 StateManager, HistoryManager, Renderer 자동 정리
+	 * - 역순으로 destroy 호출
+	 * - null 설정으로 메모리 누수 방지
 	 */
 	async onClose(): Promise<void> {
 		console.log('Closing NeroMind view...');
@@ -223,6 +519,13 @@ export class NeroMindView extends ItemView {
 			this.svgElement.remove();
 			this.svgElement = null;
 		}
+
+		// Phase 3.1: 참조 정리
+		this.stateManager = null;
+		this.historyManager = null;
+		this.eventBus = null;
+		this.renderer = null;
+		this.undoButtonEl = null;
 	}
 
 	/**
