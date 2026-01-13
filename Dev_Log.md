@@ -3004,3 +3004,225 @@ private handleCanvasDoubleClick(evt: MouseEvent): void {
 **문서 끝**
 
 **최종 업데이트:** 2026-01-13 (Phase 3.3 완료 - 실제 사용자 액션 연결, 더블클릭으로 노드 생성)
+
+
+
+
+  ---
+
+  ## Phase 3.4 - Renderer 최소 구현 (2026-01-14)
+
+  ### 목표
+  - StateSnapshot을 입력으로 받아 SVG에 노드를 시각화
+  - Renderer는 StateManager, HistoryManager, EventBus에 의존하지 않음
+  - View는 `Renderer.render(snapshot)`만 호출
+
+  ### 변경 파일
+  | 파일 | 변경 유형 |
+  |------|-----------|
+  | `src/rendering/Renderer.ts` | 수정 |
+  | `src/views/NeroMindView.ts` | 수정 |
+
+  ### Renderer.ts 구현 함수
+
+  #### `render(snapshot: StateSnapshot): void`
+  ```typescript
+  render(snapshot: StateSnapshot): void {
+      const nodeLayer = this.getOrCreateNodeLayer();
+      this.clearLayer(nodeLayer);
+
+      for (const node of snapshot.nodes) {
+          const nodeGroup = this.createNodeGroup(node.id, node.position.x, node.position.y);
+          const circle = this.createCircle();
+          const text = this.createText(node.content);
+
+          nodeGroup.appendChild(circle);
+          nodeGroup.appendChild(text);
+          nodeLayer.appendChild(nodeGroup);
+      }
+  }
+  - StateSnapshot을 SVG로 렌더링하는 public 메서드
+  - node-layer 획득 → clear → 노드 순회 렌더링
+
+  getOrCreateNodeLayer(): SVGGElement
+
+  - #node-layer 획득 또는 생성
+  - #transform-layer 내부에 추가
+
+  clearLayer(layer: SVGGElement): void
+
+  - 레이어 내 모든 자식 요소 제거
+  - while (layer.firstChild) 패턴 사용
+
+  createNodeGroup(id: string, x: number, y: number): SVGGElement
+
+  - 노드 그룹 <g> 생성
+  - transform: translate(x, y) 적용
+  - data-node-id 속성 설정
+
+  createCircle(): SVGCircleElement
+
+  - 반지름 30, 흰색 배경(rgba(255, 255, 255, 0.9))
+  - 회색 테두리(rgba(0, 0, 0, 0.15))
+
+  createText(content: string): SVGTextElement
+
+  - 텍스트 중앙 정렬 (text-anchor: middle)
+  - Apple 시스템 폰트, 12px
+
+  NeroMindView.ts 수정 함수
+
+  renderSnapshot(snapshot: StateSnapshot): void
+
+  private renderSnapshot(snapshot: StateSnapshot): void {
+      console.log('Rendering snapshot:', { nodeCount: snapshot.nodes.length, ... });
+
+      if (this.renderer) {
+          this.renderer.render(snapshot);
+      }
+  }
+  - 기존: 주석 처리된 this.renderer.render(snapshot)
+  - 변경: 주석 해제하여 실제 렌더링 호출
+
+  handleCanvasDoubleClick(evt: MouseEvent): void
+
+  const snapshot = this.historyManager.execute(command);
+  this.renderSnapshot(snapshot);  // Phase 3.4 추가
+  this.updateUndoButton();
+  - 노드 생성 후 renderSnapshot(snapshot) 호출 추가
+
+  빌드 결과
+
+  - TypeScript 컴파일 성공 (에러 0개)
+
+  ---
+  Phase 4.0 - Edge 렌더링 추가 (2026-01-14)
+
+  목표
+
+  - 부모-자식 노드 간 연결선(Edge) 시각화
+  - parentId 기반 edge 도출 (snapshot.edges 미사용)
+  - Renderer 내부 구현만 변경
+  - Phase 3 아키텍처 무변경
+
+  변경 파일
+  ┌───────────────────────────┬───────────┐
+  │           파일            │ 변경 유형 │
+  ├───────────────────────────┼───────────┤
+  │ src/rendering/Renderer.ts │ 수정      │
+  └───────────────────────────┴───────────┘
+  Renderer.ts 추가/수정 함수
+
+  render(snapshot: StateSnapshot): void (수정)
+
+  render(snapshot: StateSnapshot): void {
+      this.renderEdges(snapshot);  // 엣지 먼저 (뒤에 그려짐)
+      this.renderNodes(snapshot);  // 노드 나중에 (앞에 그려짐)
+  }
+  - 렌더링 순서: edge-layer → node-layer
+  - 노드가 엣지 위에 표시됨
+
+  renderEdges(snapshot: StateSnapshot): void (추가)
+
+  private renderEdges(snapshot: StateSnapshot): void {
+      const edgeLayer = this.getOrCreateEdgeLayer();
+      this.clearLayer(edgeLayer);
+
+      // 노드 위치 맵 구축 (O(n))
+      const nodePositionMap = new Map<string, Position>();
+      for (const node of snapshot.nodes) {
+          nodePositionMap.set(node.id, node.position);
+      }
+
+      // parentId 기반 엣지 렌더링 (O(n))
+      for (const node of snapshot.nodes) {
+          if (node.parentId !== null) {
+              const parentPosition = nodePositionMap.get(node.parentId);
+              if (parentPosition) {
+                  const line = this.createLine(parentPosition, node.position);
+                  edgeLayer.appendChild(line);
+              }
+          }
+      }
+  }
+  - parentId 기반 부모-자식 연결선 렌더링
+  - 시간복잡도: O(2n)
+
+  renderNodes(snapshot: StateSnapshot): void (추가)
+
+  - Phase 3.4 노드 렌더링 로직을 별도 메서드로 분리
+
+  getOrCreateEdgeLayer(): SVGGElement (추가)
+
+  private getOrCreateEdgeLayer(): SVGGElement {
+      let edgeLayer = this.svgElement.querySelector('#edge-layer') as SVGGElement | null;
+
+      if (!edgeLayer) {
+          edgeLayer = document.createElementNS(SVG_NS, 'g') as SVGGElement;
+          edgeLayer.setAttribute('id', 'edge-layer');
+
+          const transformLayer = this.svgElement.querySelector('#transform-layer');
+          if (transformLayer) {
+              const nodeLayer = transformLayer.querySelector('#node-layer');
+              if (nodeLayer) {
+                  transformLayer.insertBefore(edgeLayer, nodeLayer);
+              } else {
+                  transformLayer.appendChild(edgeLayer);
+              }
+          }
+      }
+      return edgeLayer;
+  }
+  - #edge-layer 획득 또는 생성
+  - #node-layer보다 먼저 삽입 (z-order: 뒤에 렌더링)
+
+  createLine(from: Position, to: Position): SVGLineElement (추가)
+
+  private createLine(from: Position, to: Position): SVGLineElement {
+      const line = document.createElementNS(SVG_NS, 'line') as SVGLineElement;
+      line.setAttribute('x1', String(from.x));
+      line.setAttribute('y1', String(from.y));
+      line.setAttribute('x2', String(to.x));
+      line.setAttribute('y2', String(to.y));
+      line.setAttribute('stroke', 'rgba(0, 0, 0, 0.2)');
+      line.setAttribute('stroke-width', '2');
+      return line;
+  }
+  - SVG <line> 요소 생성
+  - 부모 위치 → 자식 위치 직선
+
+  제약 조건 준수
+  ┌────────────────────────────────┬───────────┐
+  │              항목              │ 준수 여부 │
+  ├────────────────────────────────┼───────────┤
+  │ StateManager import 금지       │ ✅        │
+  ├────────────────────────────────┼───────────┤
+  │ HistoryManager import 금지     │ ✅        │
+  ├────────────────────────────────┼───────────┤
+  │ EventBus import 금지           │ ✅        │
+  ├────────────────────────────────┼───────────┤
+  │ main.ts 수정 금지              │ ✅        │
+  ├────────────────────────────────┼───────────┤
+  │ 새로운 UI 요소 추가 금지       │ ✅        │
+  ├────────────────────────────────┼───────────┤
+  │ render(snapshot) 시그니처 유지 │ ✅        │
+  └────────────────────────────────┴───────────┘
+  빌드 결과
+
+  - TypeScript 컴파일 성공 (에러 0개)
+
+  ---
+  다음 구현 예정 (Phase 4.1+)
+  ┌──────────────────────┬───────────┐
+  │         기능         │ 우선순위  │
+  ├──────────────────────┼───────────┤
+  │ Edge 선택/하이라이트 │ Phase 4.1 │
+  ├──────────────────────┼───────────┤
+  │ 노드 드래그 이동     │ Phase 4.2 │
+  ├──────────────────────┼───────────┤
+  │ 베지어 곡선 Edge     │ Phase 4.3 │
+  ├──────────────────────┼───────────┤
+  │ 노드 클릭 선택       │ Phase 4.2 │
+  ├──────────────────────┼───────────┤
+  │ ```                  │           │
+  └──────────────────────┴───────────┘
