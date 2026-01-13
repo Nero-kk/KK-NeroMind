@@ -547,6 +547,24 @@ var EventBus = class {
   }
 };
 
+// src/types/index.ts
+var DEFAULT_SETTINGS = {
+  centerOnNodeCreate: true,
+  autoAlign: true,
+  minimap: {
+    enabled: true,
+    size: "medium",
+    opacity: 0.9
+  },
+  theme: "light",
+  animationDuration: 200,
+  nodeGap: {
+    horizontal: 100,
+    vertical: 60
+  }
+};
+var SVG_NS = "http://www.w3.org/2000/svg";
+
 // src/rendering/Renderer.ts
 var Renderer = class {
   constructor(svgElement) {
@@ -554,7 +572,167 @@ var Renderer = class {
     this.svgElement = svgElement;
   }
   /**
-   * 렌더링 시작
+   * StateSnapshot을 SVG로 렌더링
+   *
+   * Phase 4.0 렌더링 순서:
+   * 1. edge-layer: 엣지 먼저 (뒤에 그려짐)
+   * 2. node-layer: 노드 나중에 (앞에 그려짐)
+   *
+   * @param snapshot - 렌더링할 StateSnapshot
+   */
+  render(snapshot) {
+    this.renderEdges(snapshot);
+    this.renderNodes(snapshot);
+  }
+  /**
+   * Phase 4.0: 엣지 렌더링
+   *
+   * 책임:
+   * - parentId 기반으로 부모-자식 연결선 렌더링
+   * - 노드 위치 맵 구축 후 순회
+   *
+   * @param snapshot - 렌더링할 StateSnapshot
+   */
+  renderEdges(snapshot) {
+    const edgeLayer = this.getOrCreateEdgeLayer();
+    this.clearLayer(edgeLayer);
+    const nodePositionMap = /* @__PURE__ */ new Map();
+    for (const node of snapshot.nodes) {
+      nodePositionMap.set(node.id, node.position);
+    }
+    for (const node of snapshot.nodes) {
+      if (node.parentId !== null) {
+        const parentPosition = nodePositionMap.get(node.parentId);
+        if (parentPosition) {
+          const line = this.createLine(parentPosition, node.position);
+          edgeLayer.appendChild(line);
+        }
+      }
+    }
+  }
+  /**
+   * 노드 렌더링 (Phase 3.4 로직 분리)
+   */
+  renderNodes(snapshot) {
+    const nodeLayer = this.getOrCreateNodeLayer();
+    this.clearLayer(nodeLayer);
+    for (const node of snapshot.nodes) {
+      const nodeGroup = this.createNodeGroup(node.id, node.position.x, node.position.y);
+      const circle = this.createCircle();
+      const text = this.createText(node.content);
+      nodeGroup.appendChild(circle);
+      nodeGroup.appendChild(text);
+      nodeLayer.appendChild(nodeGroup);
+    }
+  }
+  /**
+   * Phase 4.0: edge-layer 획득 또는 생성
+   *
+   * edge-layer는 node-layer보다 먼저 추가되어야 함 (뒤에 렌더링)
+   */
+  getOrCreateEdgeLayer() {
+    let edgeLayer = this.svgElement.querySelector("#edge-layer");
+    if (!edgeLayer) {
+      edgeLayer = document.createElementNS(SVG_NS, "g");
+      edgeLayer.setAttribute("id", "edge-layer");
+      const transformLayer = this.svgElement.querySelector("#transform-layer");
+      if (transformLayer) {
+        const nodeLayer = transformLayer.querySelector("#node-layer");
+        if (nodeLayer) {
+          transformLayer.insertBefore(edgeLayer, nodeLayer);
+        } else {
+          transformLayer.appendChild(edgeLayer);
+        }
+      } else {
+        this.svgElement.appendChild(edgeLayer);
+      }
+    }
+    return edgeLayer;
+  }
+  /**
+   * node-layer 획득 또는 생성
+   */
+  getOrCreateNodeLayer() {
+    let nodeLayer = this.svgElement.querySelector("#node-layer");
+    if (!nodeLayer) {
+      nodeLayer = document.createElementNS(SVG_NS, "g");
+      nodeLayer.setAttribute("id", "node-layer");
+      const transformLayer = this.svgElement.querySelector("#transform-layer");
+      if (transformLayer) {
+        transformLayer.appendChild(nodeLayer);
+      } else {
+        this.svgElement.appendChild(nodeLayer);
+      }
+    }
+    return nodeLayer;
+  }
+  /**
+   * 레이어 내용 제거
+   */
+  clearLayer(layer) {
+    while (layer.firstChild) {
+      layer.removeChild(layer.firstChild);
+    }
+  }
+  /**
+   * Phase 4.0: 직선(line) 생성
+   *
+   * 스타일: 하드코딩 (Phase 4.0 임시)
+   */
+  createLine(from, to) {
+    const line = document.createElementNS(SVG_NS, "line");
+    line.setAttribute("x1", String(from.x));
+    line.setAttribute("y1", String(from.y));
+    line.setAttribute("x2", String(to.x));
+    line.setAttribute("y2", String(to.y));
+    line.setAttribute("stroke", "rgba(0, 0, 0, 0.2)");
+    line.setAttribute("stroke-width", "2");
+    return line;
+  }
+  /**
+   * 노드 그룹 생성
+   */
+  createNodeGroup(id, x, y) {
+    const group = document.createElementNS(SVG_NS, "g");
+    group.setAttribute("id", `node-${id}`);
+    group.setAttribute("transform", `translate(${x}, ${y})`);
+    group.setAttribute("data-node-id", id);
+    return group;
+  }
+  /**
+   * 원(circle) 생성
+   *
+   * 스타일: 하드코딩 (Phase 4.0 임시)
+   */
+  createCircle() {
+    const circle = document.createElementNS(SVG_NS, "circle");
+    circle.setAttribute("r", "30");
+    circle.setAttribute("cx", "0");
+    circle.setAttribute("cy", "0");
+    circle.setAttribute("fill", "rgba(255, 255, 255, 0.9)");
+    circle.setAttribute("stroke", "rgba(0, 0, 0, 0.15)");
+    circle.setAttribute("stroke-width", "1");
+    return circle;
+  }
+  /**
+   * 텍스트 생성
+   *
+   * 스타일: 하드코딩 (Phase 4.0 임시)
+   */
+  createText(content) {
+    const text = document.createElementNS(SVG_NS, "text");
+    text.setAttribute("x", "0");
+    text.setAttribute("y", "0");
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("dominant-baseline", "middle");
+    text.setAttribute("font-family", "-apple-system, BlinkMacSystemFont, sans-serif");
+    text.setAttribute("font-size", "12");
+    text.setAttribute("fill", "#1d1d1f");
+    text.textContent = content;
+    return text;
+  }
+  /**
+   * 렌더링 시작 (현재 미사용)
    */
   start() {
     console.log("Renderer started");
@@ -568,20 +746,6 @@ var Renderer = class {
       this.rafId = null;
     }
     console.log("Renderer stopped");
-  }
-  /**
-   * 다음 프레임 렌더링 예약
-   */
-  scheduleRender() {
-    this.rafId = requestAnimationFrame(() => {
-      this.render();
-      this.scheduleRender();
-    });
-  }
-  /**
-   * 렌더링 수행
-   */
-  render() {
   }
   /**
    * Disposable
@@ -693,8 +857,8 @@ var NeroMindView = class extends import_obsidian.ItemView {
    */
   initializeSVGCanvas() {
     var _a, _b;
-    const SVG_NS = "http://www.w3.org/2000/svg";
-    this.svgElement = document.createElementNS(SVG_NS, "svg");
+    const SVG_NS2 = "http://www.w3.org/2000/svg";
+    this.svgElement = document.createElementNS(SVG_NS2, "svg");
     this.svgElement.setAttribute("class", "neromind-canvas");
     this.svgElement.setAttribute("width", "100%");
     this.svgElement.setAttribute("height", "100%");
@@ -705,17 +869,17 @@ var NeroMindView = class extends import_obsidian.ItemView {
       "viewBox",
       `0 0 ${viewBoxWidth} ${viewBoxHeight}`
     );
-    const bgGroup = document.createElementNS(SVG_NS, "g");
+    const bgGroup = document.createElementNS(SVG_NS2, "g");
     bgGroup.setAttribute("id", "background-layer");
     this.svgElement.appendChild(bgGroup);
-    const transformGroup = document.createElementNS(SVG_NS, "g");
+    const transformGroup = document.createElementNS(SVG_NS2, "g");
     transformGroup.setAttribute("id", "transform-layer");
     transformGroup.setAttribute("transform", "translate(0, 0) scale(1)");
     this.svgElement.appendChild(transformGroup);
-    const edgeGroup = document.createElementNS(SVG_NS, "g");
+    const edgeGroup = document.createElementNS(SVG_NS2, "g");
     edgeGroup.setAttribute("id", "edge-layer");
     transformGroup.appendChild(edgeGroup);
-    const nodeGroup = document.createElementNS(SVG_NS, "g");
+    const nodeGroup = document.createElementNS(SVG_NS2, "g");
     nodeGroup.setAttribute("id", "node-layer");
     transformGroup.appendChild(nodeGroup);
     if (this.mindmapContainerEl) {
@@ -847,7 +1011,7 @@ var NeroMindView = class extends import_obsidian.ItemView {
     }
   }
   /**
-   * Phase 3.1: Snapshot 렌더링
+   * Phase 3.4: Snapshot 렌더링
    *
    * 책임:
    * - StateSnapshot을 Renderer에 전달
@@ -864,7 +1028,7 @@ var NeroMindView = class extends import_obsidian.ItemView {
       rootId: snapshot.rootId
     });
     if (this.renderer) {
-      console.log("Renderer available but render() not yet implemented");
+      this.renderer.render(snapshot);
     }
   }
   /**
@@ -946,6 +1110,7 @@ var NeroMindView = class extends import_obsidian.ItemView {
     try {
       const snapshot = this.historyManager.execute(command);
       console.log("Node created at position:", { x, y, nodeId, canUndo: this.historyManager.canUndo() });
+      this.renderSnapshot(snapshot);
       this.updateUndoButton();
     } catch (error) {
       console.error("Failed to create node:", error);
@@ -956,7 +1121,7 @@ var NeroMindView = class extends import_obsidian.ItemView {
    */
   renderWelcomeMessage() {
     var _a;
-    const SVG_NS = "http://www.w3.org/2000/svg";
+    const SVG_NS2 = "http://www.w3.org/2000/svg";
     if (!this.svgElement)
       return;
     const nodeLayer = this.svgElement.querySelector("#node-layer");
@@ -965,9 +1130,9 @@ var NeroMindView = class extends import_obsidian.ItemView {
     const containerRect = (_a = this.mindmapContainerEl) == null ? void 0 : _a.getBoundingClientRect();
     const centerX = ((containerRect == null ? void 0 : containerRect.width) || 800) / 2;
     const centerY = ((containerRect == null ? void 0 : containerRect.height) || 600) / 2;
-    const nodeGroup = document.createElementNS(SVG_NS, "g");
+    const nodeGroup = document.createElementNS(SVG_NS2, "g");
     nodeGroup.setAttribute("transform", `translate(${centerX}, ${centerY})`);
-    const rect = document.createElementNS(SVG_NS, "rect");
+    const rect = document.createElementNS(SVG_NS2, "rect");
     rect.setAttribute("x", "-100");
     rect.setAttribute("y", "-20");
     rect.setAttribute("width", "200");
@@ -977,7 +1142,7 @@ var NeroMindView = class extends import_obsidian.ItemView {
     rect.setAttribute("stroke", "rgba(0, 0, 0, 0.08)");
     rect.setAttribute("stroke-width", "1");
     rect.setAttribute("filter", "url(#glass-blur)");
-    const text = document.createElementNS(SVG_NS, "text");
+    const text = document.createElementNS(SVG_NS2, "text");
     text.setAttribute("x", "0");
     text.setAttribute("y", "5");
     text.setAttribute("text-anchor", "middle");
@@ -988,10 +1153,10 @@ var NeroMindView = class extends import_obsidian.ItemView {
     nodeGroup.appendChild(rect);
     nodeGroup.appendChild(text);
     nodeLayer.appendChild(nodeGroup);
-    const defs = document.createElementNS(SVG_NS, "defs");
-    const filter = document.createElementNS(SVG_NS, "filter");
+    const defs = document.createElementNS(SVG_NS2, "defs");
+    const filter = document.createElementNS(SVG_NS2, "filter");
     filter.setAttribute("id", "glass-blur");
-    const feGaussianBlur = document.createElementNS(SVG_NS, "feGaussianBlur");
+    const feGaussianBlur = document.createElementNS(SVG_NS2, "feGaussianBlur");
     feGaussianBlur.setAttribute("stdDeviation", "10");
     filter.appendChild(feGaussianBlur);
     defs.appendChild(filter);
@@ -1102,23 +1267,6 @@ var NeroMindSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-  }
-};
-
-// src/types/index.ts
-var DEFAULT_SETTINGS = {
-  centerOnNodeCreate: true,
-  autoAlign: true,
-  minimap: {
-    enabled: true,
-    size: "medium",
-    opacity: 0.9
-  },
-  theme: "light",
-  animationDuration: 200,
-  nodeGap: {
-    horizontal: 100,
-    vertical: 60
   }
 };
 

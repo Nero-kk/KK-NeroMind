@@ -306,7 +306,7 @@ export class NeroMindView extends ItemView {
 	}
 
 	/**
-	 * Phase 3.1: Snapshot 렌더링
+	 * Phase 3.4: Snapshot 렌더링
 	 *
 	 * 책임:
 	 * - StateSnapshot을 Renderer에 전달
@@ -323,12 +323,12 @@ export class NeroMindView extends ItemView {
 			rootId: snapshot.rootId
 		});
 
-		// Phase 3.1: Renderer는 snapshot 소비만
-		// 실제 렌더링 로직은 Renderer 내부에서 처리
+		// Phase 3.4: Renderer.render(snapshot) 호출
+		
 		if (this.renderer) {
-			// this.renderer.render(snapshot);
-			// Phase 1 Renderer는 아직 render() 메서드 미구현
-			console.log('Renderer available but render() not yet implemented');
+			this.renderer.render(snapshot);
+			
+			
 		}
 	}
 
@@ -427,6 +427,9 @@ export class NeroMindView extends ItemView {
 			// historyManager.execute() → StateManager.apply() → commandQueue.push()
 			const snapshot = this.historyManager.execute(command);
 			console.log('Node created at position:', { x, y, nodeId, canUndo: this.historyManager.canUndo() });
+
+			// Phase 3.4: 렌더링
+			this.renderSnapshot(snapshot);
 
 			// Undo 버튼 활성화
 			this.updateUndoButton();
