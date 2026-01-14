@@ -59,6 +59,8 @@ export class StateManager implements Disposable {
 	 * 현재 상태의 읽기 전용 스냅샷을 반환
 	 * - 외부 소비자는 반환값을 수정하더라도 내부 상태에 영향 없음
 	 * - 내부 배열까지 deep freeze하여 불변성 보장
+	 *
+	 * Phase 5.1: selectedNodeId는 persistentState.ui에서 가져옴
 	 */
 	getSnapshot(): StateSnapshot {
 		const nodes = Object.freeze(
@@ -84,7 +86,7 @@ export class StateManager implements Disposable {
 			rootId: this.persistentState.graph.rootId,
 			pinnedNodeIds,
 			collapsedNodeIds,
-			selectedNodeId: this.ephemeralState.selectedNodeId,
+			selectedNodeId: this.persistentState.ui.selectedNodeId, // Phase 5.1: persistent
 			editingNodeId: this.ephemeralState.editingNodeId,
 		});
 	}
@@ -100,6 +102,8 @@ export class StateManager implements Disposable {
 
 	/**
 	 * 초기 영구 상태 생성
+	 *
+	 * Phase 5.1: ui 상태 추가
 	 */
 	private createInitialPersistentState(): PersistentState {
 		return {
@@ -127,6 +131,9 @@ export class StateManager implements Disposable {
 				},
 			},
 			pinnedNodes: new Set<string>(),
+			ui: {
+				selectedNodeId: null, // Phase 5.1: 선택 상태 (Undo 대상)
+			},
 		};
 	}
 
@@ -259,21 +266,24 @@ export class StateManager implements Disposable {
 	}
 
 	/**
-	 * 노드 선택
+	 * 노드 선택 (Phase 4.x: Command 패턴)
 	 *
 	 * 제약사항:
 	 * - nodeId 존재 여부 검증 안 됨
 	 * - 이전 선택은 lastSelectedNodeId에 자동 저장됨
 	 * - null 전달 시 선택 해제
+	 *
+	 * Phase 4.x:
+	 * - SelectNodeCommand를 통해 apply() 경로 사용
+	 * - HistoryManager 통합은 Phase 4.x+ 예정
 	 */
 	selectNode(nodeId: NodeId | null): void {
-		if (this.ephemeralState.selectedNodeId) {
-			this.ephemeralState.lastSelectedNodeId = this.ephemeralState.selectedNodeId;
-		}
-		this.ephemeralState.selectedNodeId = nodeId;
-
-		// Phase 2+: 이벤트 발행
-		// this.emit('nodeSelected', nodeId);
+		// Dynamic import to avoid circular dependency
+		// SelectNodeCommand는 이 메서드 내에서만 사용되므로
+		// lazy import로 순환 참조 방지
+		const { SelectNodeCommand } = require('../history/SelectNodeCommand');
+		const command = new SelectNodeCommand(nodeId);
+		this.apply(command);
 	}
 
 	/**
@@ -290,6 +300,53 @@ export class StateManager implements Disposable {
 
 		// Phase 2+: 이벤트 발행
 		// this.emit('editingChanged', nodeId);
+	}
+
+	/**
+	 * 노드 이동 (Phase 4.x: Command 패턴)
+	 *
+	 * 제약사항:
+	 * - nodeId 존재 여부 검증 안 됨
+	 * - 레이아웃 계산은 외부에서 수행
+	 * - 다른 노드에 영향 주지 않음
+	 *
+	 * Phase 4.x:
+	 * - MoveNodeCommand를 통해 apply() 경로 사용
+	 * - 현재 위치를 from으로 자동 캡처
+	 * - HistoryManager 통합은 Phase 4.x+ 예정
+	 *
+	 * @param nodeId - 이동할 노드 ID
+	 * @param toX - 목표 x 좌표
+	 * @param toY - 목표 y 좌표
+	 */
+	moveNode(nodeId: NodeId, toX: number, toY: number): void {
+		// 현재 위치 캡처 (undo용)
+		const node = this.persistentState.graph.nodes.get(nodeId);
+		if (!node) {
+			// 노드가 없으면 조용히 실패
+			return;
+		}
+
+		const from = { x: node.position.x, y: node.position.y };
+		const to = { x: toX, y: toY };
+
+		// Dynamic import to avoid circular dependency
+		const { MoveNodeCommand } = require('../history/MoveNodeCommand');
+		const command = new MoveNodeCommand(nodeId, from, to);
+		this.apply(command);
+	}
+
+	/**
+	 * 선택 해제 (Phase 5.1: Command 패턴)
+	 *
+	 * Phase 5.1:
+	 * - ClearSelectionCommand를 통해 apply() 경로 사용
+	 * - Undo/Redo 대상
+	 */
+	clearSelection(): void {
+		const { ClearSelectionCommand } = require('../history/ClearSelectionCommand');
+		const command = new ClearSelectionCommand();
+		this.apply(command);
 	}
 
 	/**

@@ -106,9 +106,13 @@ export class NeroMindView extends ItemView {
 	/**
 	 * SVG 캔버스 초기화
 	 *
+	 * Phase 6.1 수정사항:
+	 * - overflow: visible 설정 (clip 방지)
+	 * - viewBox 제거 (DOM 좌표계와 일치시킴)
+	 * - 줌/팬은 transform-layer로 처리
+	 *
 	 * Phase 1 주의사항:
 	 * - SVG_NS 네임스페이스 사용 필수
-	 * - 뷰포트 설정 (viewBox)
 	 * - 줌/팬 준비 (transform group)
 	 */
 	private initializeSVGCanvas(): void {
@@ -120,14 +124,12 @@ export class NeroMindView extends ItemView {
 		this.svgElement.setAttribute('width', '100%');
 		this.svgElement.setAttribute('height', '100%');
 
-		// 뷰포트 초기 설정
-		const containerRect = this.mindmapContainerEl?.getBoundingClientRect();
-		const viewBoxWidth = containerRect?.width || 800;
-		const viewBoxHeight = containerRect?.height || 600;
-		this.svgElement.setAttribute(
-			'viewBox',
-			`0 0 ${viewBoxWidth} ${viewBoxHeight}`
-		);
+		// Phase 6.1: overflow: visible 설정 (y축 하단 clip 방지)
+		this.svgElement.style.overflow = 'visible';
+
+		// Phase 6.1: viewBox 제거 (DOM 좌표계와 1:1 매칭)
+		// 이전에는 viewBox를 설정했으나, 이는 좌표계 불일치의 원인이었음
+		// 제거하면 SVG 좌표계 = DOM 좌표계가 되어 일관성 유지
 
 		// 배경 그룹
 		const bgGroup = document.createElementNS(SVG_NS, 'g');
@@ -197,6 +199,8 @@ export class NeroMindView extends ItemView {
 		// Renderer 초기화
 		if (this.svgElement) {
 			this.renderer = new Renderer(this.svgElement);
+			// Phase 5: StateManager 주입 (drag 완료 시 moveNode 호출용)
+			this.renderer.setStateManager(this.stateManager);
 			this.addDisposable(this.renderer);
 		}
 
@@ -208,12 +212,17 @@ export class NeroMindView extends ItemView {
 	 *
 	 * 책임:
 	 * - HTML 버튼 요소 생성
-	 * - 스타일 적용
+	 * - CSS 클래스 적용 (styles.css의 .neromind-undo-button 사용)
 	 * - 클릭 이벤트 연결
 	 * - 초기 활성화 상태 설정
 	 *
 	 * 비책임:
 	 * - Undo 로직 실행 (handleUndo 책임)
+	 *
+	 * z-index 전략:
+	 * - Undo 버튼은 overlay 내 배치 (z-index: 20)
+	 * - Canvas transform (zoom/pan)에 영향받지 않음
+	 * - 노드 렌더링에 가려지지 않음
 	 */
 	private createUndoButton(): void {
 		const overlayEl = this.containerEl.querySelector('.neromind-overlay');
@@ -222,23 +231,11 @@ export class NeroMindView extends ItemView {
 			return;
 		}
 
+		// CSS 클래스 사용 (.neromind-undo-button)
 		this.undoButtonEl = overlayEl.createEl('button', {
 			text: 'Undo',
 			cls: 'neromind-undo-button'
 		});
-
-		// 스타일 적용
-		this.undoButtonEl.style.position = 'absolute';
-		this.undoButtonEl.style.bottom = '20px';
-		this.undoButtonEl.style.right = '20px';
-		this.undoButtonEl.style.padding = '8px 16px';
-		this.undoButtonEl.style.border = '1px solid rgba(0, 0, 0, 0.1)';
-		this.undoButtonEl.style.borderRadius = '8px';
-		this.undoButtonEl.style.background = 'rgba(255, 255, 255, 0.9)';
-		this.undoButtonEl.style.cursor = 'pointer';
-		this.undoButtonEl.style.pointerEvents = 'auto'; // overlay는 pointer-events: none
-		this.undoButtonEl.style.fontSize = '14px';
-		this.undoButtonEl.style.fontFamily = '-apple-system, BlinkMacSystemFont, sans-serif';
 
 		// 클릭 이벤트 연결
 		this.undoButtonEl.addEventListener('click', () => this.handleUndo());
@@ -282,10 +279,11 @@ export class NeroMindView extends ItemView {
 	 *
 	 * 책임:
 	 * - canUndo() 결과에 따라 버튼 활성화/비활성화
-	 * - 버튼 텍스트 설정
+	 * - CSS :disabled 선택자가 자동으로 스타일 적용
 	 *
 	 * 비책임:
 	 * - Undo 로직 실행
+	 * - 스타일 직접 조작 (CSS에 위임)
 	 */
 	private updateUndoButton(): void {
 		if (!this.undoButtonEl || !this.historyManager) {
@@ -295,14 +293,8 @@ export class NeroMindView extends ItemView {
 		const canUndo = this.historyManager.canUndo();
 		this.undoButtonEl.disabled = !canUndo;
 
-		// 비활성화 시 스타일 변경
-		if (!canUndo) {
-			this.undoButtonEl.style.opacity = '0.5';
-			this.undoButtonEl.style.cursor = 'not-allowed';
-		} else {
-			this.undoButtonEl.style.opacity = '1';
-			this.undoButtonEl.style.cursor = 'pointer';
-		}
+		// CSS :disabled 선택자가 자동으로 스타일 적용
+		// .neromind-undo-button:disabled { opacity: 0.5; cursor: not-allowed; }
 	}
 
 	/**
@@ -426,7 +418,7 @@ export class NeroMindView extends ItemView {
 		try {
 			// historyManager.execute() → StateManager.apply() → commandQueue.push()
 			const snapshot = this.historyManager.execute(command);
-			console.log('Node created at position:', { x, y, nodeId, canUndo: this.historyManager.canUndo() });
+			console.log('[handleCanvasDoubleClick] 노드 생성 - 클릭 위치:', { x, y, nodeId });
 
 			// Phase 3.4: 렌더링
 			this.renderSnapshot(snapshot);
@@ -440,6 +432,15 @@ export class NeroMindView extends ItemView {
 
 	/**
 	 * Phase 1 환영 메시지
+	 *
+	 * Phase 6.1 수정:
+	 * - viewBox 제거로 인해 getBoundingClientRect() 사용
+	 * - Renderer.getViewportSize()와 동일한 로직
+	 * - DOM 좌표계 기준 중앙 계산
+	 *
+	 * 검증:
+	 * ✓ DOM 기준 중앙 계산
+	 * ✓ Renderer와 동일한 좌표계 사용
 	 */
 	private renderWelcomeMessage(): void {
 		const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -449,17 +450,24 @@ export class NeroMindView extends ItemView {
 		const nodeLayer = this.svgElement.querySelector('#node-layer');
 		if (!nodeLayer) return;
 
-		// 간단한 환영 노드 생성
-		const containerRect = this.mindmapContainerEl?.getBoundingClientRect();
-		const centerX = (containerRect?.width || 800) / 2;
-		const centerY = (containerRect?.height || 600) / 2;
+		// Phase 6.1: DOM 좌표계 기준 중앙 계산
+		const boundingRect = this.svgElement.getBoundingClientRect();
+		const centerX = boundingRect.width / 2 || 400; // fallback
+		const centerY = boundingRect.height / 2 || 300; // fallback
+
+		console.log('[renderWelcomeMessage] DOM 기준 중앙 계산:', {
+			rectWidth: boundingRect.width,
+			rectHeight: boundingRect.height,
+			centerX,
+			centerY
+		});
 
 		// 노드 그룹
 		const nodeGroup = document.createElementNS(SVG_NS, 'g');
 		nodeGroup.setAttribute('transform', `translate(${centerX}, ${centerY})`);
 
 		// 노드 배경 (Glassmorphism 스타일)
-		const rect = document.createElementNS(SVG_NS, 'rect');
+		const rect = document.createElementNS(SVG_NS, 'rect') as SVGRectElement;
 		rect.setAttribute('x', '-100');
 		rect.setAttribute('y', '-20');
 		rect.setAttribute('width', '200');

@@ -7,6 +7,9 @@ var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -20,6 +23,144 @@ var __copyProps = (to, from, except, desc) => {
   return to;
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// src/history/SelectNodeCommand.ts
+var SelectNodeCommand_exports = {};
+__export(SelectNodeCommand_exports, {
+  SelectNodeCommand: () => SelectNodeCommand
+});
+var SelectNodeCommand;
+var init_SelectNodeCommand = __esm({
+  "src/history/SelectNodeCommand.ts"() {
+    SelectNodeCommand = class {
+      constructor(newNodeId) {
+        this.newNodeId = newNodeId;
+        this.description = "Select node";
+        this.previousNodeId = null;
+        this.isFirstExecution = true;
+      }
+      /**
+       * execute: 노드 선택 상태 변경
+       *
+       * Phase 5.1:
+       * - persistentState.ui.selectedNodeId 변경 (Undo 대상)
+       * - lastSelectedNodeId는 ephemeral에 유지 (Undo 비대상)
+       */
+      execute(context) {
+        if (this.isFirstExecution) {
+          this.previousNodeId = context.persistent.ui.selectedNodeId;
+          this.isFirstExecution = false;
+        }
+        if (context.persistent.ui.selectedNodeId !== null) {
+          context.ephemeral.lastSelectedNodeId = context.persistent.ui.selectedNodeId;
+        }
+        context.persistent.ui.selectedNodeId = this.newNodeId;
+      }
+      /**
+       * undo: 이전 선택 상태로 복원
+       *
+       * Phase 5.1:
+       * - persistentState.ui.selectedNodeId를 previousNodeId로 복원
+       */
+      undo(context) {
+        context.persistent.ui.selectedNodeId = this.previousNodeId;
+      }
+    };
+  }
+});
+
+// src/history/MoveNodeCommand.ts
+var MoveNodeCommand_exports = {};
+__export(MoveNodeCommand_exports, {
+  MoveNodeCommand: () => MoveNodeCommand
+});
+var MoveNodeCommand;
+var init_MoveNodeCommand = __esm({
+  "src/history/MoveNodeCommand.ts"() {
+    MoveNodeCommand = class {
+      constructor(nodeId, from, to) {
+        this.nodeId = nodeId;
+        this.from = from;
+        this.to = to;
+        this.description = "Move node";
+      }
+      /**
+       * execute: 노드 위치를 to로 이동
+       *
+       * 동작:
+       * 1. 노드를 persistent state에서 조회
+       * 2. position을 to로 변경
+       * 3. updatedAt 자동 갱신
+       */
+      execute(context) {
+        const node = context.persistent.graph.nodes.get(this.nodeId);
+        if (!node) {
+          return;
+        }
+        node.position.x = this.to.x;
+        node.position.y = this.to.y;
+        node.updatedAt = Date.now();
+      }
+      /**
+       * undo: 노드 위치를 from으로 복원
+       *
+       * 동작:
+       * 1. 노드를 persistent state에서 조회
+       * 2. position을 from으로 복원
+       * 3. updatedAt 자동 갱신
+       */
+      undo(context) {
+        const node = context.persistent.graph.nodes.get(this.nodeId);
+        if (!node) {
+          return;
+        }
+        node.position.x = this.from.x;
+        node.position.y = this.from.y;
+        node.updatedAt = Date.now();
+      }
+    };
+  }
+});
+
+// src/history/ClearSelectionCommand.ts
+var ClearSelectionCommand_exports = {};
+__export(ClearSelectionCommand_exports, {
+  ClearSelectionCommand: () => ClearSelectionCommand
+});
+var ClearSelectionCommand;
+var init_ClearSelectionCommand = __esm({
+  "src/history/ClearSelectionCommand.ts"() {
+    ClearSelectionCommand = class {
+      constructor() {
+        this.description = "Clear selection";
+        this.previousNodeId = null;
+        this.isFirstExecution = true;
+      }
+      /**
+       * execute: 선택 해제 (null 설정)
+       *
+       * Phase 5.1:
+       * - persistentState.ui.selectedNodeId = null
+       */
+      execute(context) {
+        if (this.isFirstExecution) {
+          this.previousNodeId = context.persistent.ui.selectedNodeId;
+          this.isFirstExecution = false;
+        }
+        context.persistent.ui.selectedNodeId = null;
+      }
+      /**
+       * undo: 이전 선택 상태로 복원
+       *
+       * Phase 5.1:
+       * - persistentState.ui.selectedNodeId를 previousNodeId로 복원
+       */
+      undo(context) {
+        context.persistent.ui.selectedNodeId = this.previousNodeId;
+      }
+    };
+  }
+});
 
 // src/main.ts
 var main_exports = {};
@@ -49,6 +190,8 @@ var StateManager = class {
    * 현재 상태의 읽기 전용 스냅샷을 반환
    * - 외부 소비자는 반환값을 수정하더라도 내부 상태에 영향 없음
    * - 내부 배열까지 deep freeze하여 불변성 보장
+   *
+   * Phase 5.1: selectedNodeId는 persistentState.ui에서 가져옴
    */
   getSnapshot() {
     const nodes = Object.freeze(
@@ -73,7 +216,8 @@ var StateManager = class {
       rootId: this.persistentState.graph.rootId,
       pinnedNodeIds,
       collapsedNodeIds,
-      selectedNodeId: this.ephemeralState.selectedNodeId,
+      selectedNodeId: this.persistentState.ui.selectedNodeId,
+      // Phase 5.1: persistent
       editingNodeId: this.ephemeralState.editingNodeId
     });
   }
@@ -87,6 +231,8 @@ var StateManager = class {
   }
   /**
    * 초기 영구 상태 생성
+   *
+   * Phase 5.1: ui 상태 추가
    */
   createInitialPersistentState() {
     return {
@@ -113,7 +259,11 @@ var StateManager = class {
           opacity: 0.9
         }
       },
-      pinnedNodes: /* @__PURE__ */ new Set()
+      pinnedNodes: /* @__PURE__ */ new Set(),
+      ui: {
+        selectedNodeId: null
+        // Phase 5.1: 선택 상태 (Undo 대상)
+      }
     };
   }
   /**
@@ -224,18 +374,21 @@ var StateManager = class {
     this.emitSafe("nodeUpdated", { node });
   }
   /**
-   * 노드 선택
+   * 노드 선택 (Phase 4.x: Command 패턴)
    *
    * 제약사항:
    * - nodeId 존재 여부 검증 안 됨
    * - 이전 선택은 lastSelectedNodeId에 자동 저장됨
    * - null 전달 시 선택 해제
+   *
+   * Phase 4.x:
+   * - SelectNodeCommand를 통해 apply() 경로 사용
+   * - HistoryManager 통합은 Phase 4.x+ 예정
    */
   selectNode(nodeId) {
-    if (this.ephemeralState.selectedNodeId) {
-      this.ephemeralState.lastSelectedNodeId = this.ephemeralState.selectedNodeId;
-    }
-    this.ephemeralState.selectedNodeId = nodeId;
+    const { SelectNodeCommand: SelectNodeCommand2 } = (init_SelectNodeCommand(), __toCommonJS(SelectNodeCommand_exports));
+    const command = new SelectNodeCommand2(nodeId);
+    this.apply(command);
   }
   /**
    * 노드 편집 모드 진입
@@ -248,6 +401,46 @@ var StateManager = class {
    */
   setEditingNode(nodeId) {
     this.ephemeralState.editingNodeId = nodeId;
+  }
+  /**
+   * 노드 이동 (Phase 4.x: Command 패턴)
+   *
+   * 제약사항:
+   * - nodeId 존재 여부 검증 안 됨
+   * - 레이아웃 계산은 외부에서 수행
+   * - 다른 노드에 영향 주지 않음
+   *
+   * Phase 4.x:
+   * - MoveNodeCommand를 통해 apply() 경로 사용
+   * - 현재 위치를 from으로 자동 캡처
+   * - HistoryManager 통합은 Phase 4.x+ 예정
+   *
+   * @param nodeId - 이동할 노드 ID
+   * @param toX - 목표 x 좌표
+   * @param toY - 목표 y 좌표
+   */
+  moveNode(nodeId, toX, toY) {
+    const node = this.persistentState.graph.nodes.get(nodeId);
+    if (!node) {
+      return;
+    }
+    const from = { x: node.position.x, y: node.position.y };
+    const to = { x: toX, y: toY };
+    const { MoveNodeCommand: MoveNodeCommand2 } = (init_MoveNodeCommand(), __toCommonJS(MoveNodeCommand_exports));
+    const command = new MoveNodeCommand2(nodeId, from, to);
+    this.apply(command);
+  }
+  /**
+   * 선택 해제 (Phase 5.1: Command 패턴)
+   *
+   * Phase 5.1:
+   * - ClearSelectionCommand를 통해 apply() 경로 사용
+   * - Undo/Redo 대상
+   */
+  clearSelection() {
+    const { ClearSelectionCommand: ClearSelectionCommand2 } = (init_ClearSelectionCommand(), __toCommonJS(ClearSelectionCommand_exports));
+    const command = new ClearSelectionCommand2();
+    this.apply(command);
   }
   /**
    * 현재 상태 컨텍스트 (Command 전용)
@@ -565,11 +758,274 @@ var DEFAULT_SETTINGS = {
 };
 var SVG_NS = "http://www.w3.org/2000/svg";
 
+// src/layout/CenterRootLayout.ts
+var HORIZONTAL_GAP = 100;
+var VERTICAL_GAP = 60;
+function computeCenterRootLayout(nodes, viewport) {
+  const nodeMap = /* @__PURE__ */ new Map();
+  for (const node of nodes) {
+    nodeMap.set(node.id, node);
+  }
+  const root = nodes.find((n) => n.parentId === null);
+  if (!root) {
+    return {};
+  }
+  const tree = buildTree(root.id, nodeMap);
+  const positions = {};
+  const rootX = viewport.width / 2;
+  const rootY = viewport.height / 2;
+  positions[root.id] = { x: rootX, y: rootY };
+  console.log("[CenterRootLayout] \uB8E8\uD2B8 \uB178\uB4DC \uC911\uC559 \uBC30\uCE58:", {
+    viewport,
+    rootId: root.id,
+    rootPosition: { x: rootX, y: rootY }
+  });
+  const children = tree.children;
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    const side = i % 2 === 0 ? "right" : "left";
+    layoutSubtree(child, side, rootX, rootY, positions, nodeMap);
+  }
+  return positions;
+}
+function buildTree(nodeId, nodeMap) {
+  const node = nodeMap.get(nodeId);
+  if (!node) {
+    throw new Error(`Node not found: ${nodeId}`);
+  }
+  const children = [];
+  for (const childId of node.childIds) {
+    children.push(buildTree(childId, nodeMap));
+  }
+  return {
+    id: nodeId,
+    parentId: node.parentId,
+    children
+  };
+}
+function layoutSubtree(tree, side, parentX, parentY, positions, nodeMap) {
+  const x = side === "right" ? parentX + HORIZONTAL_GAP : parentX - HORIZONTAL_GAP;
+  const totalHeight = calculateSubtreeHeight(tree);
+  const y = parentY;
+  positions[tree.id] = { x, y };
+  if (tree.children.length > 0) {
+    let currentY = y - totalHeight / 2;
+    for (const child of tree.children) {
+      const childHeight = calculateSubtreeHeight(child);
+      const childCenterY = currentY + childHeight / 2;
+      layoutSubtree(child, side, x, childCenterY, positions, nodeMap);
+      currentY += childHeight + VERTICAL_GAP;
+    }
+  }
+}
+function calculateSubtreeHeight(tree) {
+  if (tree.children.length === 0) {
+    return 0;
+  }
+  let totalHeight = 0;
+  for (let i = 0; i < tree.children.length; i++) {
+    const childHeight = calculateSubtreeHeight(tree.children[i]);
+    totalHeight += Math.max(childHeight, 0);
+    if (i < tree.children.length - 1) {
+      totalHeight += VERTICAL_GAP;
+    }
+  }
+  return totalHeight;
+}
+
+// src/layout/NodeTextLayout.ts
+function computeTextLayout(text, maxWidth, metrics = { fontSize: 12, fontFamily: "sans-serif" }) {
+  const { fontSize } = metrics;
+  const lineHeight = fontSize * 1.4;
+  if (!text || text.trim() === "") {
+    return {
+      lines: [""],
+      width: 0,
+      height: lineHeight
+    };
+  }
+  const words = text.split(/\s+/);
+  const lines = [];
+  let currentLine = "";
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    const testWidth = estimateTextWidth(testLine, fontSize);
+    if (testWidth <= maxWidth) {
+      currentLine = testLine;
+    } else {
+      if (currentLine === "") {
+        const parts = splitLongWord(word, maxWidth, fontSize);
+        for (let i = 0; i < parts.length - 1; i++) {
+          lines.push(parts[i]);
+        }
+        currentLine = parts[parts.length - 1];
+      } else {
+        lines.push(currentLine);
+        currentLine = word;
+      }
+    }
+  }
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  const actualWidth = Math.max(
+    ...lines.map((line) => estimateTextWidth(line, fontSize))
+  );
+  const actualHeight = lines.length * lineHeight;
+  return {
+    lines,
+    width: actualWidth,
+    height: actualHeight
+  };
+}
+function estimateTextWidth(text, fontSize) {
+  let totalWidth = 0;
+  for (const char of text) {
+    const code = char.charCodeAt(0);
+    if (code >= 44032 && code <= 55203) {
+      totalWidth += fontSize * 1;
+    } else {
+      totalWidth += fontSize * 0.6;
+    }
+  }
+  return totalWidth;
+}
+function splitLongWord(word, maxWidth, fontSize) {
+  const parts = [];
+  let current = "";
+  for (const char of word) {
+    const testWord = current + char;
+    const testWidth = estimateTextWidth(testWord, fontSize);
+    if (testWidth <= maxWidth) {
+      current += char;
+    } else {
+      if (current) {
+        parts.push(current);
+      }
+      current = char;
+    }
+  }
+  if (current) {
+    parts.push(current);
+  }
+  return parts.length > 0 ? parts : [word];
+}
+
 // src/rendering/Renderer.ts
 var Renderer = class {
   constructor(svgElement) {
     this.rafId = null;
+    // Phase 5: Drag 상태
+    this.draggingNodeId = null;
+    this.dragOffset = { x: 0, y: 0 };
+    this.dragStartPosition = { x: 0, y: 0 };
+    // Phase 5: StateManager 참조 (drag 완료 시 moveNode 호출용)
+    this.stateManager = null;
+    /**
+     * Phase 6.1: 초기 viewport 캐싱
+     *
+     * 책임:
+     * - 플러그인 최초 로딩 시 1회만 viewport 크기 계산
+     * - 이후 resize/pan/zoom 시 viewport 재계산 금지
+     * - 노드의 절대 위치를 고정하여 transform-layer만 변경
+     *
+     * 이유:
+     * - resize 시 layout 재계산하면 노드 위치가 변경됨
+     * - pan/zoom은 transform-layer로 처리해야 함
+     * - 초기 위치를 고정하여 일관된 좌표계 유지
+     */
+    this.initialViewport = null;
+    /**
+     * pointermove: 드래그 preview (state 변경 ❌)
+     *
+     * 동작:
+     * 1. draggingNodeId 없으면 무시
+     * 2. 포인터 위치 → SVG 좌표 변환
+     * 3. 새 위치 계산 (포인터 - dragOffset)
+     * 4. DOM transform 직접 변경 (state 변경 없음)
+     *
+     * 핵심: StateManager 호출 ❌, Command 생성 ❌
+     */
+    this.handlePointerMove = (e) => {
+      var _a;
+      if (!this.draggingNodeId)
+        return;
+      const pt = this.svgElement.createSVGPoint();
+      pt.x = e.clientX;
+      pt.y = e.clientY;
+      const svgP = pt.matrixTransform(
+        (_a = this.svgElement.getScreenCTM()) == null ? void 0 : _a.inverse()
+      );
+      const newX = svgP.x - this.dragOffset.x;
+      const newY = svgP.y - this.dragOffset.y;
+      const nodeGroup = this.svgElement.querySelector(
+        `#node-${this.draggingNodeId}`
+      );
+      if (nodeGroup) {
+        nodeGroup.setAttribute("transform", `translate(${newX}, ${newY})`);
+      }
+    };
+    /**
+     * pointerup: 드래그 완료 (MoveNodeCommand 생성)
+     *
+     * 동작:
+     * 1. draggingNodeId 없으면 무시
+     * 2. 포인터 위치 → SVG 좌표 변환
+     * 3. 최종 위치 계산
+     * 4. StateManager.moveNode() 호출 (단 1회 Command 생성)
+     * 5. 드래그 상태 초기화
+     * 6. 전역 리스너 제거
+     *
+     * 핵심: 여기서만 StateManager.moveNode() 호출
+     */
+    this.handlePointerUp = (e) => {
+      var _a;
+      if (!this.draggingNodeId)
+        return;
+      const pt = this.svgElement.createSVGPoint();
+      pt.x = e.clientX;
+      pt.y = e.clientY;
+      const svgP = pt.matrixTransform(
+        (_a = this.svgElement.getScreenCTM()) == null ? void 0 : _a.inverse()
+      );
+      const finalX = svgP.x - this.dragOffset.x;
+      const finalY = svgP.y - this.dragOffset.y;
+      if (this.stateManager) {
+        this.stateManager.moveNode(this.draggingNodeId, finalX, finalY);
+      }
+      this.draggingNodeId = null;
+      this.dragOffset = { x: 0, y: 0 };
+      this.dragStartPosition = { x: 0, y: 0 };
+      document.removeEventListener("pointermove", this.handlePointerMove);
+      document.removeEventListener("pointerup", this.handlePointerUp);
+      document.body.style.cursor = "";
+    };
     this.svgElement = svgElement;
+    this.setupCanvasBackgroundHandler();
+  }
+  /**
+   * Phase 5: StateManager 주입
+   *
+   * drag 완료 시 moveNode() 호출을 위해 필요
+   * Phase 5.1: 선택 해제를 위한 clearSelection() 호출
+   */
+  setStateManager(stateManager) {
+    this.stateManager = stateManager;
+  }
+  /**
+   * Phase 5.1: Canvas background 클릭 핸들러 설정
+   *
+   * SVG 빈 공간 클릭 시 선택 해제
+   */
+  setupCanvasBackgroundHandler() {
+    this.svgElement.addEventListener("pointerdown", (e) => {
+      const target = e.target;
+      if (target === this.svgElement || target.id === "transform-layer") {
+        if (this.stateManager) {
+          this.stateManager.clearSelection();
+        }
+      }
+    });
   }
   /**
    * StateSnapshot을 SVG로 렌더링
@@ -578,33 +1034,109 @@ var Renderer = class {
    * 1. edge-layer: 엣지 먼저 (뒤에 그려짐)
    * 2. node-layer: 노드 나중에 (앞에 그려짐)
    *
+   * Phase 6.0 레이아웃 통합:
+   * - computeCenterRootLayout 호출하여 실제 렌더 좌표 계산
+   * - node.position 대신 layout 결과 사용
+   * - viewport는 viewBox 기준 (SVG 내부 좌표계)
+   *
    * @param snapshot - 렌더링할 StateSnapshot
    */
   render(snapshot) {
-    this.renderEdges(snapshot);
-    this.renderNodes(snapshot);
+    if (this.initialViewport === null) {
+      this.initialViewport = this.getViewportSize();
+      console.log("[Renderer.render] \u{1F3AF} \uCD08\uAE30 viewport \uCE90\uC2F1 (1\uD68C\uB9CC):", this.initialViewport);
+    }
+    const layout = computeCenterRootLayout(snapshot.nodes, this.initialViewport);
+    const svgViewBox = this.svgElement.viewBox.baseVal;
+    const svgBoundingRect = this.svgElement.getBoundingClientRect();
+    console.log("[\u{1F50D} \uC88C\uD45C\uACC4 \uAC80\uC99D]", {
+      "viewBox.baseVal": {
+        x: svgViewBox.x,
+        y: svgViewBox.y,
+        width: svgViewBox.width,
+        height: svgViewBox.height
+      },
+      "getBoundingClientRect()": {
+        top: svgBoundingRect.top,
+        left: svgBoundingRect.left,
+        width: svgBoundingRect.width,
+        height: svgBoundingRect.height
+      },
+      "initialViewport (\uCE90\uC2F1\uB428)": this.initialViewport,
+      "\uD604\uC7AC \uC2E4\uC81C \uD06C\uAE30\uC640 \uC77C\uCE58 \uC5EC\uBD80": {
+        widthMatch: Math.abs(svgBoundingRect.width - this.initialViewport.width) < 1,
+        heightMatch: Math.abs(svgBoundingRect.height - this.initialViewport.height) < 1
+      }
+    });
+    if (snapshot.rootId && layout[snapshot.rootId]) {
+      const rootPos = layout[snapshot.rootId];
+      console.log("[\u{1F50D} \uC88C\uD45C\uACC4 \uAC80\uC99D] \uB8E8\uD2B8 \uB178\uB4DC \uCD5C\uC885 transform:", {
+        nodeId: snapshot.rootId,
+        x: rootPos.x,
+        y: rootPos.y,
+        transform: `translate(${rootPos.x}, ${rootPos.y})`
+      });
+    }
+    console.log("[Renderer.render] \uB80C\uB354\uB9C1 \uC2DC\uC791:", {
+      viewport: this.initialViewport,
+      nodeCount: snapshot.nodes.length,
+      rootId: snapshot.rootId,
+      layoutSample: Object.keys(layout).length > 0 ? { [snapshot.rootId || "none"]: layout[snapshot.rootId || ""] } : "empty"
+    });
+    this.renderEdges(snapshot, layout);
+    this.renderNodes(snapshot, layout);
+  }
+  /**
+   * Phase 6.0: Viewport 크기 계산
+   *
+   * 책임:
+   * - ✅ 실제 DOM viewport 크기를 기반으로 계산 (getBoundingClientRect)
+   * - ✅ viewBox가 아닌 사용자가 보는 실제 화면 기준
+   * - ✅ 이 좌표계가 SVG transform 좌표계와 일치함
+   *
+   * 이유:
+   * - viewBox 좌표계와 DOM viewport 좌표계가 다를 수 있음
+   * - 사용자가 보는 "시각적 중앙"은 DOM viewport 기준
+   * - CenterRootLayout은 이 DOM 좌표계 기준으로 계산해야 정확
+   *
+   * 검증 체크리스트:
+   * ✓ 루트 노드가 항상 시각적 중앙에 오는지
+   * ✓ 창 리사이즈 시 재계산 되는지 (render() 호출 시마다 계산)
+   * ✓ viewBox 설정과 무관하게 동일한 시각적 결과
+   *
+   * @returns { width, height } viewport 크기 (DOM 기준)
+   */
+  getViewportSize() {
+    const rect = this.svgElement.getBoundingClientRect();
+    return {
+      width: rect.width || 800,
+      // fallback: 800px
+      height: rect.height || 600
+      // fallback: 600px
+    };
   }
   /**
    * Phase 4.0: 엣지 렌더링
    *
+   * Phase 6.0: layout 좌표 사용
+   * - node.position 대신 layout[nodeId] 사용
+   *
    * 책임:
    * - parentId 기반으로 부모-자식 연결선 렌더링
-   * - 노드 위치 맵 구축 후 순회
+   * - 레이아웃 결과 좌표 사용
    *
    * @param snapshot - 렌더링할 StateSnapshot
+   * @param layout - 레이아웃 계산 결과 좌표
    */
-  renderEdges(snapshot) {
+  renderEdges(snapshot, layout) {
     const edgeLayer = this.getOrCreateEdgeLayer();
     this.clearLayer(edgeLayer);
-    const nodePositionMap = /* @__PURE__ */ new Map();
-    for (const node of snapshot.nodes) {
-      nodePositionMap.set(node.id, node.position);
-    }
     for (const node of snapshot.nodes) {
       if (node.parentId !== null) {
-        const parentPosition = nodePositionMap.get(node.parentId);
-        if (parentPosition) {
-          const line = this.createLine(parentPosition, node.position);
+        const parentPosition = layout[node.parentId];
+        const nodePosition = layout[node.id];
+        if (parentPosition && nodePosition) {
+          const line = this.createLine(parentPosition, nodePosition);
           edgeLayer.appendChild(line);
         }
       }
@@ -612,18 +1144,66 @@ var Renderer = class {
   }
   /**
    * 노드 렌더링 (Phase 3.4 로직 분리)
+   *
+   * Phase 4.x: 선택 상태 시각화 추가
+   * - snapshot.selectedNodeId 기반으로 선택 노드 강조
+   *
+   * Phase 5: 드래그 이벤트 리스너 추가
+   * - pointerdown 이벤트로 드래그 시작
+   *
+   * Phase 6.0: layout 좌표 사용 + rounded rect 렌더링
+   * - node.position 대신 layout[nodeId] 사용
+   * - circle 대신 rounded rect 사용
+   * - NodeTextLayout으로 텍스트 크기 계산
+   * - 다중 줄 텍스트 지원 (tspan)
+   *
+   * @param snapshot - 렌더링할 StateSnapshot
+   * @param layout - 레이아웃 계산 결과 좌표
    */
-  renderNodes(snapshot) {
+  renderNodes(snapshot, layout) {
     const nodeLayer = this.getOrCreateNodeLayer();
     this.clearLayer(nodeLayer);
     for (const node of snapshot.nodes) {
-      const nodeGroup = this.createNodeGroup(node.id, node.position.x, node.position.y);
-      const circle = this.createCircle();
-      const text = this.createText(node.content);
-      nodeGroup.appendChild(circle);
+      const nodePosition = layout[node.id];
+      if (!nodePosition) {
+        console.warn(`[renderNodes] SKIP: layout\uC5D0 \uC88C\uD45C \uC5C6\uC74C (nodeId: ${node.id})`);
+        continue;
+      }
+      const isSelected = node.id === snapshot.selectedNodeId;
+      const isDragging = node.id === this.draggingNodeId;
+      const textLayout = computeTextLayout(node.content, 200, {
+        fontSize: 12,
+        fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif"
+      });
+      const padding = 16;
+      const rectWidth = textLayout.width + padding * 2;
+      const rectHeight = textLayout.height + padding * 2;
+      const nodeGroup = this.createNodeGroup(
+        node.id,
+        nodePosition.x,
+        nodePosition.y
+      );
+      const rect = this.createRoundedRect(
+        rectWidth,
+        rectHeight,
+        8,
+        isSelected,
+        isDragging
+      );
+      nodeGroup.appendChild(rect);
+      const text = this.createMultilineText(textLayout.lines);
       nodeGroup.appendChild(text);
+      nodeGroup.style.cursor = "grab";
+      nodeGroup.addEventListener(
+        "pointerdown",
+        (e) => this.handlePointerDown(e, node.id, nodePosition)
+      );
       nodeLayer.appendChild(nodeGroup);
     }
+    console.log("[renderNodes] \uC644\uB8CC:", {
+      \uB80C\uB354\uB9C1\uB41C_\uB178\uB4DC_\uAC1C\uC218: nodeLayer.children.length,
+      \uC804\uCCB4_\uB178\uB4DC_\uAC1C\uC218: snapshot.nodes.length
+    });
   }
   /**
    * Phase 4.0: edge-layer 획득 또는 생성
@@ -691,8 +1271,22 @@ var Renderer = class {
   }
   /**
    * 노드 그룹 생성
+   *
+   * 책임:
+   * - CenterRootLayout 결과 좌표를 SVG transform으로 변환
+   * - viewBox 기준 좌표계 사용 (transform-layer의 identity transform 기준)
+   *
+   * 검증:
+   * - CenterRootLayout이 계산한 viewport 중앙 좌표가 그대로 적용됨
+   * - transform-layer가 identity이므로 추가 변환 없음
    */
   createNodeGroup(id, x, y) {
+    console.log("[createNodeGroup] \uCD5C\uC885 \uC88C\uD45C \uC801\uC6A9:", {
+      nodeId: id,
+      x,
+      y,
+      transform: `translate(${x}, ${y})`
+    });
     const group = document.createElementNS(SVG_NS, "g");
     group.setAttribute("id", `node-${id}`);
     group.setAttribute("transform", `translate(${x}, ${y})`);
@@ -700,24 +1294,46 @@ var Renderer = class {
     return group;
   }
   /**
-   * 원(circle) 생성
+   * Phase 6.0: Rounded rect 생성 (circle 대체)
    *
-   * 스타일: 하드코딩 (Phase 4.0 임시)
+   * 책임:
+   * - 텍스트 콘텐츠를 감싸는 rounded rectangle 생성
+   * - 선택/드래그 상태에 따른 시각적 피드백
+   *
+   * @param width - rect 너비
+   * @param height - rect 높이
+   * @param radius - 모서리 둥글기
+   * @param isSelected - 선택 상태
+   * @param isDragging - 드래그 상태
+   * @returns SVGRectElement
    */
-  createCircle() {
-    const circle = document.createElementNS(SVG_NS, "circle");
-    circle.setAttribute("r", "30");
-    circle.setAttribute("cx", "0");
-    circle.setAttribute("cy", "0");
-    circle.setAttribute("fill", "rgba(255, 255, 255, 0.9)");
-    circle.setAttribute("stroke", "rgba(0, 0, 0, 0.15)");
-    circle.setAttribute("stroke-width", "1");
-    return circle;
+  createRoundedRect(width, height, radius = 8, isSelected = false, isDragging = false) {
+    const rect = document.createElementNS(SVG_NS, "rect");
+    rect.setAttribute("x", String(-width / 2));
+    rect.setAttribute("y", String(-height / 2));
+    rect.setAttribute("width", String(width));
+    rect.setAttribute("height", String(height));
+    rect.setAttribute("rx", String(radius));
+    rect.setAttribute("ry", String(radius));
+    rect.setAttribute("fill", "rgba(255, 255, 255, 0.9)");
+    if (isSelected) {
+      rect.setAttribute("stroke", "rgba(0, 122, 255, 1)");
+      rect.setAttribute("stroke-width", "3");
+    } else {
+      rect.setAttribute("stroke", "rgba(0, 0, 0, 0.15)");
+      rect.setAttribute("stroke-width", "1");
+    }
+    if (isDragging) {
+      rect.setAttribute("opacity", "0.85");
+    }
+    return rect;
   }
   /**
-   * 텍스트 생성
+   * 텍스트 생성 (단일 줄)
    *
    * 스타일: 하드코딩 (Phase 4.0 임시)
+   *
+   * @deprecated Phase 6.0부터 createMultilineText() 사용 권장
    */
   createText(content) {
     const text = document.createElementNS(SVG_NS, "text");
@@ -725,11 +1341,89 @@ var Renderer = class {
     text.setAttribute("y", "0");
     text.setAttribute("text-anchor", "middle");
     text.setAttribute("dominant-baseline", "middle");
-    text.setAttribute("font-family", "-apple-system, BlinkMacSystemFont, sans-serif");
+    text.setAttribute(
+      "font-family",
+      "-apple-system, BlinkMacSystemFont, sans-serif"
+    );
     text.setAttribute("font-size", "12");
     text.setAttribute("fill", "#1d1d1f");
     text.textContent = content;
     return text;
+  }
+  /**
+   * Phase 6.0: 다중 줄 텍스트 생성 (tspan 기반)
+   *
+   * 책임:
+   * - lines 배열을 tspan 요소로 변환
+   * - 수직/수평 중앙 정렬 유지
+   * - lineHeight 적용
+   *
+   * @param lines - 줄바꿈된 텍스트 배열
+   * @returns SVGTextElement (tspan 포함)
+   */
+  createMultilineText(lines) {
+    const text = document.createElementNS(SVG_NS, "text");
+    text.setAttribute("x", "0");
+    text.setAttribute("y", "0");
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute(
+      "font-family",
+      "-apple-system, BlinkMacSystemFont, sans-serif"
+    );
+    text.setAttribute("font-size", "12");
+    text.setAttribute("fill", "#1d1d1f");
+    const fontSize = 12;
+    const lineHeight = fontSize * 1.4;
+    const totalHeight = lines.length * lineHeight;
+    const startY = -totalHeight / 2 + lineHeight / 2;
+    for (let i = 0; i < lines.length; i++) {
+      const tspan = document.createElementNS(
+        SVG_NS,
+        "tspan"
+      );
+      tspan.setAttribute("x", "0");
+      tspan.setAttribute("y", String(startY + i * lineHeight));
+      tspan.setAttribute("dominant-baseline", "middle");
+      tspan.textContent = lines[i];
+      text.appendChild(tspan);
+    }
+    return text;
+  }
+  // =========================================================================
+  // Phase 5: Drag 이벤트 핸들러
+  // =========================================================================
+  /**
+   * pointerdown: 드래그 시작 + 노드 선택
+   *
+   * Phase 5.1:
+   * 1. SelectNodeCommand 실행 (노드 선택)
+   * 2. draggingNodeId 설정
+   * 3. dragOffset 계산 (포인터 위치 - 노드 위치)
+   * 4. dragStartPosition 저장 (undo용)
+   * 5. 전역 pointermove/pointerup 리스너 등록
+   * 6. cursor 변경
+   */
+  handlePointerDown(e, nodeId, nodePosition) {
+    var _a;
+    e.stopPropagation();
+    if (this.stateManager) {
+      this.stateManager.selectNode(nodeId);
+    }
+    this.draggingNodeId = nodeId;
+    this.dragStartPosition = { x: nodePosition.x, y: nodePosition.y };
+    const pt = this.svgElement.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const svgP = pt.matrixTransform(
+      (_a = this.svgElement.getScreenCTM()) == null ? void 0 : _a.inverse()
+    );
+    this.dragOffset = {
+      x: svgP.x - nodePosition.x,
+      y: svgP.y - nodePosition.y
+    };
+    document.addEventListener("pointermove", this.handlePointerMove);
+    document.addEventListener("pointerup", this.handlePointerUp);
+    document.body.style.cursor = "grabbing";
   }
   /**
    * 렌더링 시작 (현재 미사용)
@@ -752,6 +1446,8 @@ var Renderer = class {
    */
   destroy() {
     this.stop();
+    document.removeEventListener("pointermove", this.handlePointerMove);
+    document.removeEventListener("pointerup", this.handlePointerUp);
   }
 };
 
@@ -850,25 +1546,23 @@ var NeroMindView = class extends import_obsidian.ItemView {
   /**
    * SVG 캔버스 초기화
    *
+   * Phase 6.1 수정사항:
+   * - overflow: visible 설정 (clip 방지)
+   * - viewBox 제거 (DOM 좌표계와 일치시킴)
+   * - 줌/팬은 transform-layer로 처리
+   *
    * Phase 1 주의사항:
    * - SVG_NS 네임스페이스 사용 필수
-   * - 뷰포트 설정 (viewBox)
    * - 줌/팬 준비 (transform group)
    */
   initializeSVGCanvas() {
-    var _a, _b;
+    var _a;
     const SVG_NS2 = "http://www.w3.org/2000/svg";
     this.svgElement = document.createElementNS(SVG_NS2, "svg");
     this.svgElement.setAttribute("class", "neromind-canvas");
     this.svgElement.setAttribute("width", "100%");
     this.svgElement.setAttribute("height", "100%");
-    const containerRect = (_a = this.mindmapContainerEl) == null ? void 0 : _a.getBoundingClientRect();
-    const viewBoxWidth = (containerRect == null ? void 0 : containerRect.width) || 800;
-    const viewBoxHeight = (containerRect == null ? void 0 : containerRect.height) || 600;
-    this.svgElement.setAttribute(
-      "viewBox",
-      `0 0 ${viewBoxWidth} ${viewBoxHeight}`
-    );
+    this.svgElement.style.overflow = "visible";
     const bgGroup = document.createElementNS(SVG_NS2, "g");
     bgGroup.setAttribute("id", "background-layer");
     this.svgElement.appendChild(bgGroup);
@@ -893,7 +1587,7 @@ var NeroMindView = class extends import_obsidian.ItemView {
       overlayDiv.style.height = "100%";
       overlayDiv.style.pointerEvents = "none";
     }
-    (_b = this.mindmapContainerEl) == null ? void 0 : _b.appendChild(this.svgElement);
+    (_a = this.mindmapContainerEl) == null ? void 0 : _a.appendChild(this.svgElement);
   }
   /**
    * Phase 3.1: State Management 초기화
@@ -918,6 +1612,7 @@ var NeroMindView = class extends import_obsidian.ItemView {
     this.addDisposable(this.historyManager);
     if (this.svgElement) {
       this.renderer = new Renderer(this.svgElement);
+      this.renderer.setStateManager(this.stateManager);
       this.addDisposable(this.renderer);
     }
     console.log("State management initialized");
@@ -927,12 +1622,17 @@ var NeroMindView = class extends import_obsidian.ItemView {
    *
    * 책임:
    * - HTML 버튼 요소 생성
-   * - 스타일 적용
+   * - CSS 클래스 적용 (styles.css의 .neromind-undo-button 사용)
    * - 클릭 이벤트 연결
    * - 초기 활성화 상태 설정
    *
    * 비책임:
    * - Undo 로직 실행 (handleUndo 책임)
+   *
+   * z-index 전략:
+   * - Undo 버튼은 overlay 내 배치 (z-index: 20)
+   * - Canvas transform (zoom/pan)에 영향받지 않음
+   * - 노드 렌더링에 가려지지 않음
    */
   createUndoButton() {
     const overlayEl = this.containerEl.querySelector(".neromind-overlay");
@@ -944,17 +1644,6 @@ var NeroMindView = class extends import_obsidian.ItemView {
       text: "Undo",
       cls: "neromind-undo-button"
     });
-    this.undoButtonEl.style.position = "absolute";
-    this.undoButtonEl.style.bottom = "20px";
-    this.undoButtonEl.style.right = "20px";
-    this.undoButtonEl.style.padding = "8px 16px";
-    this.undoButtonEl.style.border = "1px solid rgba(0, 0, 0, 0.1)";
-    this.undoButtonEl.style.borderRadius = "8px";
-    this.undoButtonEl.style.background = "rgba(255, 255, 255, 0.9)";
-    this.undoButtonEl.style.cursor = "pointer";
-    this.undoButtonEl.style.pointerEvents = "auto";
-    this.undoButtonEl.style.fontSize = "14px";
-    this.undoButtonEl.style.fontFamily = "-apple-system, BlinkMacSystemFont, sans-serif";
     this.undoButtonEl.addEventListener("click", () => this.handleUndo());
     this.updateUndoButton();
   }
@@ -991,10 +1680,11 @@ var NeroMindView = class extends import_obsidian.ItemView {
    *
    * 책임:
    * - canUndo() 결과에 따라 버튼 활성화/비활성화
-   * - 버튼 텍스트 설정
+   * - CSS :disabled 선택자가 자동으로 스타일 적용
    *
    * 비책임:
    * - Undo 로직 실행
+   * - 스타일 직접 조작 (CSS에 위임)
    */
   updateUndoButton() {
     if (!this.undoButtonEl || !this.historyManager) {
@@ -1002,13 +1692,6 @@ var NeroMindView = class extends import_obsidian.ItemView {
     }
     const canUndo = this.historyManager.canUndo();
     this.undoButtonEl.disabled = !canUndo;
-    if (!canUndo) {
-      this.undoButtonEl.style.opacity = "0.5";
-      this.undoButtonEl.style.cursor = "not-allowed";
-    } else {
-      this.undoButtonEl.style.opacity = "1";
-      this.undoButtonEl.style.cursor = "pointer";
-    }
   }
   /**
    * Phase 3.4: Snapshot 렌더링
@@ -1109,7 +1792,7 @@ var NeroMindView = class extends import_obsidian.ItemView {
     const command = new CreateNodeCommand(newNode);
     try {
       const snapshot = this.historyManager.execute(command);
-      console.log("Node created at position:", { x, y, nodeId, canUndo: this.historyManager.canUndo() });
+      console.log("[handleCanvasDoubleClick] \uB178\uB4DC \uC0DD\uC131 - \uD074\uB9AD \uC704\uCE58:", { x, y, nodeId });
       this.renderSnapshot(snapshot);
       this.updateUndoButton();
     } catch (error) {
@@ -1118,18 +1801,32 @@ var NeroMindView = class extends import_obsidian.ItemView {
   }
   /**
    * Phase 1 환영 메시지
+   *
+   * Phase 6.1 수정:
+   * - viewBox 제거로 인해 getBoundingClientRect() 사용
+   * - Renderer.getViewportSize()와 동일한 로직
+   * - DOM 좌표계 기준 중앙 계산
+   *
+   * 검증:
+   * ✓ DOM 기준 중앙 계산
+   * ✓ Renderer와 동일한 좌표계 사용
    */
   renderWelcomeMessage() {
-    var _a;
     const SVG_NS2 = "http://www.w3.org/2000/svg";
     if (!this.svgElement)
       return;
     const nodeLayer = this.svgElement.querySelector("#node-layer");
     if (!nodeLayer)
       return;
-    const containerRect = (_a = this.mindmapContainerEl) == null ? void 0 : _a.getBoundingClientRect();
-    const centerX = ((containerRect == null ? void 0 : containerRect.width) || 800) / 2;
-    const centerY = ((containerRect == null ? void 0 : containerRect.height) || 600) / 2;
+    const boundingRect = this.svgElement.getBoundingClientRect();
+    const centerX = boundingRect.width / 2 || 400;
+    const centerY = boundingRect.height / 2 || 300;
+    console.log("[renderWelcomeMessage] DOM \uAE30\uC900 \uC911\uC559 \uACC4\uC0B0:", {
+      rectWidth: boundingRect.width,
+      rectHeight: boundingRect.height,
+      centerX,
+      centerY
+    });
     const nodeGroup = document.createElementNS(SVG_NS2, "g");
     nodeGroup.setAttribute("transform", `translate(${centerX}, ${centerY})`);
     const rect = document.createElementNS(SVG_NS2, "rect");

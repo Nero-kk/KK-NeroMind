@@ -120,6 +120,7 @@ export interface MindMapEdge {
  * 영구 상태 (Undo 대상)
  *
  * Architecture v4.0 § 11 상태 관리 시스템 기준
+ * Phase 5.1: UI 상태 추가 (선택 노드 Undo 대상)
  */
 export interface PersistentState {
 	schemaVersion: number;
@@ -127,6 +128,7 @@ export interface PersistentState {
 	layout: LayoutData;
 	settings: UserSettings;
 	pinnedNodes: Set<NodeId>;
+	ui: UIState; // Phase 5.1: 선택 상태 등 Undo 대상 UI 상태
 }
 
 /**
@@ -168,6 +170,15 @@ export interface UserSettings {
 	autoAlign: boolean;
 	centerOnCreate: boolean;
 	minimap: MiniMapSettings;
+}
+
+/**
+ * UI 상태 (Phase 5.1: Undo 대상)
+ *
+ * Undo/Redo가 필요한 UI 상태를 관리
+ */
+export interface UIState {
+	selectedNodeId: NodeId | null; // 선택된 노드 ID
 }
 
 export interface MiniMapSettings {
