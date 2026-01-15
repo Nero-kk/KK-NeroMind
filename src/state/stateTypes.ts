@@ -13,6 +13,7 @@ import {
 export interface StateContext {
 	persistent: PersistentState;
 	ephemeral: EphemeralState;
+	emit?: (eventName: string, payload: unknown) => void;
 }
 
 /**

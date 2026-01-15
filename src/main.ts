@@ -19,23 +19,21 @@
  */
 
 import { Plugin } from 'obsidian';
-import { MindMapView, VIEW_TYPE_NEROMIND } from './views/MindMapView';
+import { NeroMindView, VIEW_TYPE_NEROMIND } from './views/NeroMindView';
 import { Disposable } from './core/Disposable';
+import { EventBus } from './events/EventBus';
+import {
+	DEFAULT_SETTINGS,
+	NeroMindSettings,
+	NeroMindSettingTab
+} from './settings/NeroMindSettingTab';
 
-/**
- * 플러그인 설정 (Phase 1 P0 최소)
- */
-interface NeroMindSettings {
-	version: string;
-}
-
-const DEFAULT_SETTINGS: NeroMindSettings = {
-	version: '0.1.0'
-};
+const SETTINGS_CHANGED_EVENT = 'settingsChanged';
 
 export default class NeroMindPlugin extends Plugin {
 	settings: NeroMindSettings = DEFAULT_SETTINGS;
 	private disposables: Disposable[] = [];
+	private readonly settingsBus = new EventBus();
 
 	/**
 	 * 플러그인 로드
@@ -49,8 +47,11 @@ export default class NeroMindPlugin extends Plugin {
 		// 뷰 등록
 		this.registerView(
 			VIEW_TYPE_NEROMIND,
-			(leaf) => new MindMapView(leaf)
+			(leaf) => new NeroMindView(leaf, this)
 		);
+
+		// 설정 탭 등록
+		this.addSettingTab(new NeroMindSettingTab(this.app, this));
 
 		// Ribbon 아이콘 추가
 		this.addRibbonIcon('brain', 'Open NeroMind', () => {
@@ -92,7 +93,8 @@ export default class NeroMindPlugin extends Plugin {
 	 * 설정 로드
 	 */
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const data = await this.loadData();
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, data ?? {});
 	}
 
 	/**
@@ -100,6 +102,14 @@ export default class NeroMindPlugin extends Plugin {
 	 */
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+		this.settingsBus.emit(SETTINGS_CHANGED_EVENT, { settings: this.settings });
+	}
+
+	onSettingsChange(handler: (settings: NeroMindSettings) => void): () => void {
+		return this.settingsBus.on(SETTINGS_CHANGED_EVENT, (payload) => {
+			const data = payload as { settings: NeroMindSettings };
+			handler(data.settings);
+		});
 	}
 
 	/**

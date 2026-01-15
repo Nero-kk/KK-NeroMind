@@ -50,11 +50,15 @@ import { Disposable } from '../types';
 import { StateManager } from '../state/StateManager';
 import { StateContext, StateSnapshot } from '../state/stateTypes';
 import { UndoableCommand } from './UndoableCommand';
+import { TransactionCommand } from './TransactionCommand';
+import { MoveNodeCommand } from './MoveNodeCommand';
 
 export class HistoryManager implements Disposable {
   private readonly commandQueue: UndoableCommand[] = [];
   private readonly MAX_HISTORY = 10;
   private readonly stateManager: StateManager;
+  private readonly coalesceWindowMs = 300;
+  private coalesceBlocked = false;
 
   /**
    * HistoryManager 생성자
@@ -89,7 +93,25 @@ export class HistoryManager implements Disposable {
    * - StateManager 내부 상태 직접 조작
    * - EventBus 발행
    */
-  execute(command: UndoableCommand): StateSnapshot {
+  execute(command: UndoableCommand | UndoableCommand[]): StateSnapshot {
+    if (Array.isArray(command)) {
+      const transaction = new TransactionCommand(command);
+      return this.executeSingle(transaction);
+    }
+
+    return this.executeSingle(command);
+  }
+
+  endMoveCoalescing(): void {
+    this.coalesceBlocked = true;
+  }
+
+  private executeSingle(command: UndoableCommand): StateSnapshot {
+    const mergedSnapshot = this.tryCoalesceMove(command);
+    if (mergedSnapshot) {
+      return mergedSnapshot;
+    }
+
     // StateManager이 command.execute(context)를 호출함
     const snapshot = this.stateManager.apply(command as any);
 
@@ -102,6 +124,48 @@ export class HistoryManager implements Disposable {
     }
 
     return snapshot;
+  }
+
+  private tryCoalesceMove(command: UndoableCommand): StateSnapshot | null {
+    if (!(command instanceof MoveNodeCommand)) {
+      this.coalesceBlocked = false;
+      return null;
+    }
+
+    if (this.coalesceBlocked) {
+      this.coalesceBlocked = false;
+      return null;
+    }
+
+    const lastCommand = this.commandQueue[this.commandQueue.length - 1];
+    if (!(lastCommand instanceof MoveNodeCommand)) {
+      return null;
+    }
+
+    if (!this.canMergeMoveCommands(lastCommand, command)) {
+      return null;
+    }
+
+    lastCommand.updateNextPosition(command.getNextPosition());
+    const snapshot = this.stateManager.apply(lastCommand as any);
+    return snapshot;
+  }
+
+  private canMergeMoveCommands(
+    previous: MoveNodeCommand,
+    next: MoveNodeCommand
+  ): boolean {
+    if (previous.getNodeId() !== next.getNodeId()) {
+      return false;
+    }
+
+    const lastAppliedAt = previous.getLastAppliedAt();
+    const now = next.getCreatedAt();
+    if (lastAppliedAt === 0) {
+      return false;
+    }
+
+    return now - lastAppliedAt <= this.coalesceWindowMs;
   }
 
   /**

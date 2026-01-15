@@ -38,13 +38,14 @@ export class Renderer implements Disposable {
 	 * 2. node-layer: 노드 나중에 (앞에 그려짐)
 	 *
 	 * @param snapshot - 렌더링할 StateSnapshot
+	 * @param visibleNodeIds - 렌더링할 노드 ID 집합
 	 */
-	render(snapshot: StateSnapshot): void {
+	render(snapshot: StateSnapshot, visibleNodeIds?: Set<string>): void {
 		// Phase 4.0: 엣지 먼저 렌더링 (뒤에 그려짐)
-		this.renderEdges(snapshot);
+		this.renderEdges(snapshot, visibleNodeIds);
 
 		// Phase 3.4: 노드 렌더링 (앞에 그려짐)
-		this.renderNodes(snapshot);
+		this.renderNodes(snapshot, visibleNodeIds);
 	}
 
 	/**
@@ -56,19 +57,28 @@ export class Renderer implements Disposable {
 	 *
 	 * @param snapshot - 렌더링할 StateSnapshot
 	 */
-	private renderEdges(snapshot: StateSnapshot): void {
+	private renderEdges(snapshot: StateSnapshot, visibleNodeIds?: Set<string>): void {
 		const edgeLayer = this.getOrCreateEdgeLayer();
 		this.clearLayer(edgeLayer);
 
 		// 노드 위치 맵 구축 (O(n))
 		const nodePositionMap = new Map<string, Position>();
 		for (const node of snapshot.nodes) {
+			if (visibleNodeIds && !visibleNodeIds.has(node.id)) {
+				continue;
+			}
 			nodePositionMap.set(node.id, node.position);
 		}
 
 		// parentId 기반 엣지 렌더링 (O(n))
 		for (const node of snapshot.nodes) {
+			if (visibleNodeIds && !visibleNodeIds.has(node.id)) {
+				continue;
+			}
 			if (node.parentId !== null) {
+				if (visibleNodeIds && !visibleNodeIds.has(node.parentId)) {
+					continue;
+				}
 				const parentPosition = nodePositionMap.get(node.parentId);
 				if (parentPosition) {
 					const line = this.createLine(parentPosition, node.position);
@@ -81,11 +91,14 @@ export class Renderer implements Disposable {
 	/**
 	 * 노드 렌더링 (Phase 3.4 로직 분리)
 	 */
-	private renderNodes(snapshot: StateSnapshot): void {
+	private renderNodes(snapshot: StateSnapshot, visibleNodeIds?: Set<string>): void {
 		const nodeLayer = this.getOrCreateNodeLayer();
 		this.clearLayer(nodeLayer);
 
 		for (const node of snapshot.nodes) {
+			if (visibleNodeIds && !visibleNodeIds.has(node.id)) {
+				continue;
+			}
 			const nodeGroup = this.createNodeGroup(node.id, node.position.x, node.position.y);
 			const circle = this.createCircle();
 			const text = this.createText(node.content);
