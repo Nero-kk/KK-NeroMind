@@ -1,10 +1,27 @@
-import { BoundingBox, MindMapEdge, MindMapNode, Position, SVG_NS } from "../types";
+import {
+  BoundingBox,
+  MindMapEdge,
+  MindMapNode,
+  Position,
+  SVG_NS,
+} from "../types";
 import { MindMapRenderer, MindMapViewport } from "./MindMapRenderer";
+import { computeTextLayout } from "../layout/NodeTextLayout";
+
+/**
+ * DomRenderer - Apple-style SVG rendering
+ *
+ * Author: Nero-kk (https://github.com/Nero-kk)
+ *
+ * Renders nodes as rounded rectangles with text-based auto-sizing
+ * per UITokens.md and Renderer-Circle-to-RoundedRect.md specifications
+ */
 
 export class DomRenderer implements MindMapRenderer {
   private svgElement: SVGSVGElement | null = null;
   private containerEl: HTMLElement | null = null;
   private lastViewport: MindMapViewport | null = null;
+  private selectedNodeId: string | null = null;
 
   init(container: HTMLElement): void {
     this.containerEl = container;
@@ -31,6 +48,59 @@ export class DomRenderer implements MindMapRenderer {
     transformGroup.appendChild(nodeGroup);
 
     this.containerEl.appendChild(this.svgElement);
+
+    // Setup Apple-style shadow filter
+    this.setupShadowFilter();
+  }
+
+  /**
+   * Setup Apple-style shadow filter for nodes
+   * Per UITokens.md: 0 1px 2px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.06)
+   */
+  private setupShadowFilter(): void {
+    if (!this.svgElement) return;
+
+    const defs = document.createElementNS(SVG_NS, "defs");
+    const filter = document.createElementNS(SVG_NS, "filter");
+    filter.setAttribute("id", "node-shadow");
+    filter.setAttribute("x", "-50%");
+    filter.setAttribute("y", "-50%");
+    filter.setAttribute("width", "200%");
+    filter.setAttribute("height", "200%");
+
+    const feGaussianBlur = document.createElementNS(SVG_NS, "feGaussianBlur");
+    feGaussianBlur.setAttribute("in", "SourceAlpha");
+    feGaussianBlur.setAttribute("stdDeviation", "4");
+
+    const feOffset = document.createElementNS(SVG_NS, "feOffset");
+    feOffset.setAttribute("dx", "0");
+    feOffset.setAttribute("dy", "2");
+    feOffset.setAttribute("result", "offsetblur");
+
+    const feComponentTransfer = document.createElementNS(
+      SVG_NS,
+      "feComponentTransfer"
+    );
+    const feFuncA = document.createElementNS(SVG_NS, "feFuncA");
+    feFuncA.setAttribute("type", "linear");
+    feFuncA.setAttribute("slope", "0.08");
+    feComponentTransfer.appendChild(feFuncA);
+
+    const feMerge = document.createElementNS(SVG_NS, "feMerge");
+    const feMergeNode1 = document.createElementNS(SVG_NS, "feMergeNode");
+    feMergeNode1.setAttribute("in", "offsetblur");
+    const feMergeNode2 = document.createElementNS(SVG_NS, "feMergeNode");
+    feMergeNode2.setAttribute("in", "SourceGraphic");
+    feMerge.appendChild(feMergeNode1);
+    feMerge.appendChild(feMergeNode2);
+
+    filter.appendChild(feGaussianBlur);
+    filter.appendChild(feOffset);
+    filter.appendChild(feComponentTransfer);
+    filter.appendChild(feMerge);
+
+    defs.appendChild(filter);
+    this.svgElement.appendChild(defs);
   }
 
   render(
@@ -50,7 +120,10 @@ export class DomRenderer implements MindMapRenderer {
     this.renderNodes(nodes);
   }
 
-  update(nodes: ReadonlyArray<MindMapNode>, edges: ReadonlyArray<MindMapEdge>): void {
+  update(
+    nodes: ReadonlyArray<MindMapNode>,
+    edges: ReadonlyArray<MindMapEdge>
+  ): void {
     if (!this.lastViewport) return;
     this.render(nodes, edges, this.lastViewport);
   }
@@ -95,11 +168,57 @@ export class DomRenderer implements MindMapRenderer {
     this.clearLayer(nodeLayer);
 
     for (const node of nodes) {
-      const nodeGroup = this.createNodeGroup(node.id, node.position.x, node.position.y);
-      const circle = this.createCircle();
-      const text = this.createText(node.content);
-      nodeGroup.appendChild(circle);
-      nodeGroup.appendChild(text);
+      // 1. Calculate text layout (Apple-style auto-sizing)
+      const textLayout = computeTextLayout(node.content, 240, {
+        fontSize: 14,
+        fontFamily: "system-ui, -apple-system",
+      });
+
+      // 2. Add padding per UITokens.md
+      const paddingX = 16;
+      const paddingY = 10;
+      const width = textLayout.width + paddingX * 2;
+      const height = textLayout.height + paddingY * 2;
+
+      // 3. Create node group
+      const nodeGroup = this.createNodeGroup(
+        node.id,
+        node.position.x,
+        node.position.y
+      );
+
+      // 4. Create rounded rectangle (Apple-style)
+      const isSelected = node.id === this.selectedNodeId;
+      const rect = this.createRoundedRect(width, height, isSelected);
+      nodeGroup.appendChild(rect);
+
+      // 5. Create multiline text with pixel-perfect vertical centering
+      // Since rect is centered at (0,0), we calculate from center
+      // Formula: y_offset = -(lines - 1) * lineHeight / 2
+      //          y = y_offset + (index * lineHeight)
+      const lineHeight = 20; // Must match NodeTextLayout
+      const totalLines = textLayout.lines.length;
+      const yOffset = -((totalLines - 1) * lineHeight) / 2;
+
+      textLayout.lines.forEach((line: string, i: number) => {
+        const text = document.createElementNS(SVG_NS, "text") as SVGTextElement;
+        text.textContent = line;
+        text.setAttribute("x", "0");
+
+        // Calculate y position from center (0,0)
+        const lineY = yOffset + i * lineHeight;
+        text.setAttribute("y", String(lineY));
+
+        text.setAttribute("text-anchor", "middle");
+        text.setAttribute("dominant-baseline", "central"); // More precise than 'middle'
+        text.setAttribute("font-family", "system-ui, -apple-system");
+        text.setAttribute("font-size", "14");
+        text.setAttribute("fill", "#1C1C1E");
+        text.setAttribute("font-weight", isSelected ? "500" : "400");
+        text.setAttribute("pointer-events", "none"); // Allow click-through to rect
+        nodeGroup.appendChild(text);
+      });
+
       nodeLayer.appendChild(nodeGroup);
     }
   }
@@ -108,7 +227,9 @@ export class DomRenderer implements MindMapRenderer {
     if (!this.svgElement) {
       return document.createElementNS(SVG_NS, "g") as SVGGElement;
     }
-    let edgeLayer = this.svgElement.querySelector("#edge-layer") as SVGGElement | null;
+    let edgeLayer = this.svgElement.querySelector(
+      "#edge-layer"
+    ) as SVGGElement | null;
     if (!edgeLayer) {
       edgeLayer = document.createElementNS(SVG_NS, "g") as SVGGElement;
       edgeLayer.setAttribute("id", "edge-layer");
@@ -131,7 +252,9 @@ export class DomRenderer implements MindMapRenderer {
     if (!this.svgElement) {
       return document.createElementNS(SVG_NS, "g") as SVGGElement;
     }
-    let nodeLayer = this.svgElement.querySelector("#node-layer") as SVGGElement | null;
+    let nodeLayer = this.svgElement.querySelector(
+      "#node-layer"
+    ) as SVGGElement | null;
     if (!nodeLayer) {
       nodeLayer = document.createElementNS(SVG_NS, "g") as SVGGElement;
       nodeLayer.setAttribute("id", "node-layer");
@@ -170,27 +293,47 @@ export class DomRenderer implements MindMapRenderer {
     return group;
   }
 
-  private createCircle(): SVGCircleElement {
-    const circle = document.createElementNS(SVG_NS, "circle") as SVGCircleElement;
-    circle.setAttribute("r", "30");
-    circle.setAttribute("cx", "0");
-    circle.setAttribute("cy", "0");
-    circle.setAttribute("fill", "rgba(255, 255, 255, 0.9)");
-    circle.setAttribute("stroke", "rgba(0, 0, 0, 0.15)");
-    circle.setAttribute("stroke-width", "1");
-    return circle;
+  /**
+   * Create Apple-style rounded rectangle node
+   * Per UITokens.md and NodeSelectionVisualSpec.md
+   */
+  private createRoundedRect(
+    width: number,
+    height: number,
+    isSelected: boolean = false
+  ): SVGRectElement {
+    const rect = document.createElementNS(SVG_NS, "rect") as SVGRectElement;
+
+    // Center the rect at (0, 0)
+    rect.setAttribute("x", String(-width / 2));
+    rect.setAttribute("y", String(-height / 2));
+    rect.setAttribute("width", String(width));
+    rect.setAttribute("height", String(height));
+    rect.setAttribute("rx", "10"); // Corner radius per UITokens.md
+    rect.setAttribute("ry", "10");
+
+    // Apple-style appearance
+    rect.setAttribute("fill", "#FFFFFF"); // White background
+    rect.setAttribute("filter", "url(#node-shadow)");
+
+    if (isSelected) {
+      // iOS Blue outline for selected state (NodeSelectionVisualSpec.md)
+      rect.setAttribute("stroke", "#0A84FF");
+      rect.setAttribute("stroke-width", "2");
+    } else {
+      // Default state
+      rect.setAttribute("stroke", "#D0D0D0"); // Per UITokens.md
+      rect.setAttribute("stroke-width", "1");
+    }
+
+    return rect;
   }
 
-  private createText(content: string): SVGTextElement {
-    const text = document.createElementNS(SVG_NS, "text") as SVGTextElement;
-    text.setAttribute("x", "0");
-    text.setAttribute("y", "0");
-    text.setAttribute("text-anchor", "middle");
-    text.setAttribute("dominant-baseline", "middle");
-    text.setAttribute("font-family", "-apple-system, BlinkMacSystemFont, sans-serif");
-    text.setAttribute("font-size", "12");
-    text.setAttribute("fill", "#1d1d1f");
-    text.textContent = content;
-    return text;
+  /**
+   * Set selected node ID for visualization
+   * Called by NeroMindView when selection changes
+   */
+  setSelectedNodeId(nodeId: string | null): void {
+    this.selectedNodeId = nodeId;
   }
 }

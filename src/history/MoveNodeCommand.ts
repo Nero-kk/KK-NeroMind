@@ -10,12 +10,12 @@
  * - 렌더링 호출
  */
 
-import { UndoableCommand } from './UndoableCommand';
-import { StateContext } from '../state/stateTypes';
-import { NodeId, Position } from '../types';
+import { UndoableCommand } from "./UndoableCommand";
+import { StateContext } from "../state/stateTypes";
+import { NodeId, Position } from "../types";
 
 export class MoveNodeCommand implements UndoableCommand {
-  description = 'Move node';
+  description = "Move node";
   private readonly nodeId: NodeId;
   private nextPosition: Position;
   private prevPosition: Position | null = null;
@@ -44,7 +44,7 @@ export class MoveNodeCommand implements UndoableCommand {
     node.updatedAt = Date.now();
     this.lastAppliedAt = node.updatedAt;
 
-    context.emit?.('nodeUpdated', { node });
+    context.emit?.("nodeUpdated", { node });
   }
 
   undo(context: StateContext): void {
@@ -55,7 +55,7 @@ export class MoveNodeCommand implements UndoableCommand {
     node.userPosition = this.prevUserPosition;
     node.updatedAt = Date.now();
 
-    context.emit?.('nodeUpdated', { node });
+    context.emit?.("nodeUpdated", { node });
   }
 
   getNodeId(): NodeId {

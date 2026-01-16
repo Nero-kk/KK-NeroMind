@@ -7,6 +7,9 @@ var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -20,6 +23,155 @@ var __copyProps = (to, from, except, desc) => {
   return to;
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// src/history/SelectNodeCommand.ts
+var SelectNodeCommand_exports = {};
+__export(SelectNodeCommand_exports, {
+  SelectNodeCommand: () => SelectNodeCommand
+});
+var SelectNodeCommand;
+var init_SelectNodeCommand = __esm({
+  "src/history/SelectNodeCommand.ts"() {
+    SelectNodeCommand = class {
+      constructor(newNodeId) {
+        this.newNodeId = newNodeId;
+        this.description = "Select node";
+        this.previousNodeId = null;
+        this.isFirstExecution = true;
+      }
+      /**
+       * execute: 노드 선택 상태 변경
+       *
+       * Phase 5.1:
+       * - persistentState.ui.selectedNodeId 변경 (Undo 대상)
+       * - lastSelectedNodeId는 ephemeral에 유지 (Undo 비대상)
+       */
+      execute(context) {
+        if (this.isFirstExecution) {
+          this.previousNodeId = context.persistent.ui.selectedNodeId;
+          this.isFirstExecution = false;
+        }
+        if (context.persistent.ui.selectedNodeId !== null) {
+          context.ephemeral.lastSelectedNodeId = context.persistent.ui.selectedNodeId;
+        }
+        context.persistent.ui.selectedNodeId = this.newNodeId;
+      }
+      /**
+       * undo: 이전 선택 상태로 복원
+       *
+       * Phase 5.1:
+       * - persistentState.ui.selectedNodeId를 previousNodeId로 복원
+       */
+      undo(context) {
+        context.persistent.ui.selectedNodeId = this.previousNodeId;
+      }
+    };
+  }
+});
+
+// src/history/MoveNodeCommand.ts
+var MoveNodeCommand_exports = {};
+__export(MoveNodeCommand_exports, {
+  MoveNodeCommand: () => MoveNodeCommand
+});
+var MoveNodeCommand;
+var init_MoveNodeCommand = __esm({
+  "src/history/MoveNodeCommand.ts"() {
+    MoveNodeCommand = class {
+      constructor(nodeId, nextPosition) {
+        this.description = "Move node";
+        this.prevPosition = null;
+        this.prevUserPosition = null;
+        this.lastAppliedAt = 0;
+        this.createdAt = Date.now();
+        this.nodeId = nodeId;
+        this.nextPosition = { ...nextPosition };
+      }
+      execute(context) {
+        var _a;
+        const node = context.persistent.graph.nodes.get(this.nodeId);
+        if (!node)
+          return;
+        if (!this.prevPosition) {
+          this.prevPosition = { ...node.position };
+        }
+        if (this.prevUserPosition === null) {
+          this.prevUserPosition = node.userPosition;
+        }
+        node.position = { ...this.nextPosition };
+        node.userPosition = true;
+        node.updatedAt = Date.now();
+        this.lastAppliedAt = node.updatedAt;
+        (_a = context.emit) == null ? void 0 : _a.call(context, "nodeUpdated", { node });
+      }
+      undo(context) {
+        var _a;
+        const node = context.persistent.graph.nodes.get(this.nodeId);
+        if (!node || !this.prevPosition || this.prevUserPosition === null)
+          return;
+        node.position = { ...this.prevPosition };
+        node.userPosition = this.prevUserPosition;
+        node.updatedAt = Date.now();
+        (_a = context.emit) == null ? void 0 : _a.call(context, "nodeUpdated", { node });
+      }
+      getNodeId() {
+        return this.nodeId;
+      }
+      getLastAppliedAt() {
+        return this.lastAppliedAt;
+      }
+      updateNextPosition(nextPosition) {
+        this.nextPosition = { ...nextPosition };
+      }
+      getNextPosition() {
+        return { ...this.nextPosition };
+      }
+      getCreatedAt() {
+        return this.createdAt;
+      }
+    };
+  }
+});
+
+// src/history/ClearSelectionCommand.ts
+var ClearSelectionCommand_exports = {};
+__export(ClearSelectionCommand_exports, {
+  ClearSelectionCommand: () => ClearSelectionCommand
+});
+var ClearSelectionCommand;
+var init_ClearSelectionCommand = __esm({
+  "src/history/ClearSelectionCommand.ts"() {
+    ClearSelectionCommand = class {
+      constructor() {
+        this.description = "Clear selection";
+        this.previousNodeId = null;
+        this.isFirstExecution = true;
+      }
+      /**
+       * execute: 선택 해제 (null 설정)
+       *
+       * Phase 5.1:
+       * - persistentState.ui.selectedNodeId = null
+       */
+      execute(context) {
+        if (this.isFirstExecution) {
+          this.previousNodeId = context.persistent.ui.selectedNodeId;
+          this.isFirstExecution = false;
+        }
+        context.persistent.ui.selectedNodeId = null;
+      }
+      /**
+       * undo: 이전 선택 상태로 복원
+       *
+       * Phase 5.1:
+       * - persistentState.ui.selectedNodeId를 previousNodeId로 복원
+       */
+      undo(context) {
+        context.persistent.ui.selectedNodeId = this.previousNodeId;
+      }
+    };
+  }
+});
 
 // src/main.ts
 var main_exports = {};
@@ -58,6 +210,8 @@ var StateManager = class {
    * 현재 상태의 읽기 전용 스냅샷을 반환
    * - 외부 소비자는 반환값을 수정하더라도 내부 상태에 영향 없음
    * - 내부 배열까지 deep freeze하여 불변성 보장
+   *
+   * Phase 5.1: selectedNodeId는 persistentState.ui에서 가져옴
    */
   getSnapshot() {
     const nodes = Object.freeze(
@@ -82,7 +236,8 @@ var StateManager = class {
       rootId: this.persistentState.graph.rootId,
       pinnedNodeIds,
       collapsedNodeIds,
-      selectedNodeId: this.ephemeralState.selectedNodeId,
+      selectedNodeId: this.persistentState.ui.selectedNodeId,
+      // Phase 5.1: persistent
       editingNodeId: this.ephemeralState.editingNodeId
     });
   }
@@ -96,6 +251,8 @@ var StateManager = class {
   }
   /**
    * 초기 영구 상태 생성
+   *
+   * Phase 5.1: ui 상태 추가
    */
   createInitialPersistentState() {
     return {
@@ -122,7 +279,11 @@ var StateManager = class {
           opacity: 0.9
         }
       },
-      pinnedNodes: /* @__PURE__ */ new Set()
+      pinnedNodes: /* @__PURE__ */ new Set(),
+      ui: {
+        selectedNodeId: null
+        // Phase 5.1: 선택 상태 (Undo 대상)
+      }
     };
   }
   /**
@@ -233,18 +394,21 @@ var StateManager = class {
     this.emitSafe("nodeUpdated", { node });
   }
   /**
-   * 노드 선택
+   * 노드 선택 (Phase 4.x: Command 패턴)
    *
    * 제약사항:
    * - nodeId 존재 여부 검증 안 됨
    * - 이전 선택은 lastSelectedNodeId에 자동 저장됨
    * - null 전달 시 선택 해제
+   *
+   * Phase 4.x:
+   * - SelectNodeCommand를 통해 apply() 경로 사용
+   * - HistoryManager 통합은 Phase 4.x+ 예정
    */
   selectNode(nodeId) {
-    if (this.ephemeralState.selectedNodeId) {
-      this.ephemeralState.lastSelectedNodeId = this.ephemeralState.selectedNodeId;
-    }
-    this.ephemeralState.selectedNodeId = nodeId;
+    const { SelectNodeCommand: SelectNodeCommand2 } = (init_SelectNodeCommand(), __toCommonJS(SelectNodeCommand_exports));
+    const command = new SelectNodeCommand2(nodeId);
+    this.apply(command);
   }
   /**
    * 노드 편집 모드 진입
@@ -257,6 +421,46 @@ var StateManager = class {
    */
   setEditingNode(nodeId) {
     this.ephemeralState.editingNodeId = nodeId;
+  }
+  /**
+   * 노드 이동 (Phase 4.x: Command 패턴)
+   *
+   * 제약사항:
+   * - nodeId 존재 여부 검증 안 됨
+   * - 레이아웃 계산은 외부에서 수행
+   * - 다른 노드에 영향 주지 않음
+   *
+   * Phase 4.x:
+   * - MoveNodeCommand를 통해 apply() 경로 사용
+   * - 현재 위치를 from으로 자동 캡처
+   * - HistoryManager 통합은 Phase 4.x+ 예정
+   *
+   * @param nodeId - 이동할 노드 ID
+   * @param toX - 목표 x 좌표
+   * @param toY - 목표 y 좌표
+   */
+  moveNode(nodeId, toX, toY) {
+    const node = this.persistentState.graph.nodes.get(nodeId);
+    if (!node) {
+      return;
+    }
+    const from = { x: node.position.x, y: node.position.y };
+    const to = { x: toX, y: toY };
+    const { MoveNodeCommand: MoveNodeCommand2 } = (init_MoveNodeCommand(), __toCommonJS(MoveNodeCommand_exports));
+    const command = new MoveNodeCommand2(nodeId, from, to);
+    this.apply(command);
+  }
+  /**
+   * 선택 해제 (Phase 5.1: Command 패턴)
+   *
+   * Phase 5.1:
+   * - ClearSelectionCommand를 통해 apply() 경로 사용
+   * - Undo/Redo 대상
+   */
+  clearSelection() {
+    const { ClearSelectionCommand: ClearSelectionCommand2 } = (init_ClearSelectionCommand(), __toCommonJS(ClearSelectionCommand_exports));
+    const command = new ClearSelectionCommand2();
+    this.apply(command);
   }
   /**
    * 현재 상태 컨텍스트 (Command 전용)
@@ -384,62 +588,8 @@ var TransactionCommand = class {
   }
 };
 
-// src/history/MoveNodeCommand.ts
-var MoveNodeCommand = class {
-  constructor(nodeId, nextPosition) {
-    this.description = "Move node";
-    this.prevPosition = null;
-    this.prevUserPosition = null;
-    this.lastAppliedAt = 0;
-    this.createdAt = Date.now();
-    this.nodeId = nodeId;
-    this.nextPosition = { ...nextPosition };
-  }
-  execute(context) {
-    var _a;
-    const node = context.persistent.graph.nodes.get(this.nodeId);
-    if (!node)
-      return;
-    if (!this.prevPosition) {
-      this.prevPosition = { ...node.position };
-    }
-    if (this.prevUserPosition === null) {
-      this.prevUserPosition = node.userPosition;
-    }
-    node.position = { ...this.nextPosition };
-    node.userPosition = true;
-    node.updatedAt = Date.now();
-    this.lastAppliedAt = node.updatedAt;
-    (_a = context.emit) == null ? void 0 : _a.call(context, "nodeUpdated", { node });
-  }
-  undo(context) {
-    var _a;
-    const node = context.persistent.graph.nodes.get(this.nodeId);
-    if (!node || !this.prevPosition || this.prevUserPosition === null)
-      return;
-    node.position = { ...this.prevPosition };
-    node.userPosition = this.prevUserPosition;
-    node.updatedAt = Date.now();
-    (_a = context.emit) == null ? void 0 : _a.call(context, "nodeUpdated", { node });
-  }
-  getNodeId() {
-    return this.nodeId;
-  }
-  getLastAppliedAt() {
-    return this.lastAppliedAt;
-  }
-  updateNextPosition(nextPosition) {
-    this.nextPosition = { ...nextPosition };
-  }
-  getNextPosition() {
-    return { ...this.nextPosition };
-  }
-  getCreatedAt() {
-    return this.createdAt;
-  }
-};
-
 // src/history/HistoryManager.ts
+init_MoveNodeCommand();
 var HistoryManager = class {
   /**
    * HistoryManager 생성자
@@ -789,12 +939,91 @@ var CanvasRenderer = class {
   }
 };
 
+// src/layout/NodeTextLayout.ts
+function computeTextLayout(text, maxWidth, metrics = { fontSize: 12, fontFamily: "sans-serif" }) {
+  const { fontSize } = metrics;
+  const lineHeight = fontSize * 1.4;
+  if (!text || text.trim() === "") {
+    return {
+      lines: [""],
+      width: 0,
+      height: lineHeight
+    };
+  }
+  const words = text.split(/\s+/);
+  const lines = [];
+  let currentLine = "";
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    const testWidth = estimateTextWidth(testLine, fontSize);
+    if (testWidth <= maxWidth) {
+      currentLine = testLine;
+    } else {
+      if (currentLine === "") {
+        const parts = splitLongWord(word, maxWidth, fontSize);
+        for (let i = 0; i < parts.length - 1; i++) {
+          lines.push(parts[i]);
+        }
+        currentLine = parts[parts.length - 1];
+      } else {
+        lines.push(currentLine);
+        currentLine = word;
+      }
+    }
+  }
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  const actualWidth = Math.max(
+    ...lines.map((line) => estimateTextWidth(line, fontSize))
+  );
+  const actualHeight = lines.length * lineHeight;
+  return {
+    lines,
+    width: actualWidth,
+    height: actualHeight
+  };
+}
+function estimateTextWidth(text, fontSize) {
+  let totalWidth = 0;
+  for (const char of text) {
+    const code = char.charCodeAt(0);
+    if (code >= 44032 && code <= 55203) {
+      totalWidth += fontSize * 1;
+    } else {
+      totalWidth += fontSize * 0.6;
+    }
+  }
+  return totalWidth;
+}
+function splitLongWord(word, maxWidth, fontSize) {
+  const parts = [];
+  let current = "";
+  for (const char of word) {
+    const testWord = current + char;
+    const testWidth = estimateTextWidth(testWord, fontSize);
+    if (testWidth <= maxWidth) {
+      current += char;
+    } else {
+      if (current) {
+        parts.push(current);
+      }
+      current = char;
+    }
+  }
+  if (current) {
+    parts.push(current);
+  }
+  return parts.length > 0 ? parts : [word];
+}
+
 // src/rendering/DomRenderer.ts
 var DomRenderer = class {
   constructor() {
     this.svgElement = null;
     this.containerEl = null;
     this.lastViewport = null;
+    this.selectedNodeId = null;
   }
   init(container) {
     this.containerEl = container;
@@ -816,6 +1045,50 @@ var DomRenderer = class {
     nodeGroup.setAttribute("id", "node-layer");
     transformGroup.appendChild(nodeGroup);
     this.containerEl.appendChild(this.svgElement);
+    this.setupShadowFilter();
+  }
+  /**
+   * Setup Apple-style shadow filter for nodes
+   * Per UITokens.md: 0 1px 2px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.06)
+   */
+  setupShadowFilter() {
+    if (!this.svgElement)
+      return;
+    const defs = document.createElementNS(SVG_NS, "defs");
+    const filter = document.createElementNS(SVG_NS, "filter");
+    filter.setAttribute("id", "node-shadow");
+    filter.setAttribute("x", "-50%");
+    filter.setAttribute("y", "-50%");
+    filter.setAttribute("width", "200%");
+    filter.setAttribute("height", "200%");
+    const feGaussianBlur = document.createElementNS(SVG_NS, "feGaussianBlur");
+    feGaussianBlur.setAttribute("in", "SourceAlpha");
+    feGaussianBlur.setAttribute("stdDeviation", "4");
+    const feOffset = document.createElementNS(SVG_NS, "feOffset");
+    feOffset.setAttribute("dx", "0");
+    feOffset.setAttribute("dy", "2");
+    feOffset.setAttribute("result", "offsetblur");
+    const feComponentTransfer = document.createElementNS(
+      SVG_NS,
+      "feComponentTransfer"
+    );
+    const feFuncA = document.createElementNS(SVG_NS, "feFuncA");
+    feFuncA.setAttribute("type", "linear");
+    feFuncA.setAttribute("slope", "0.08");
+    feComponentTransfer.appendChild(feFuncA);
+    const feMerge = document.createElementNS(SVG_NS, "feMerge");
+    const feMergeNode1 = document.createElementNS(SVG_NS, "feMergeNode");
+    feMergeNode1.setAttribute("in", "offsetblur");
+    const feMergeNode2 = document.createElementNS(SVG_NS, "feMergeNode");
+    feMergeNode2.setAttribute("in", "SourceGraphic");
+    feMerge.appendChild(feMergeNode1);
+    feMerge.appendChild(feMergeNode2);
+    filter.appendChild(feGaussianBlur);
+    filter.appendChild(feOffset);
+    filter.appendChild(feComponentTransfer);
+    filter.appendChild(feMerge);
+    defs.appendChild(filter);
+    this.svgElement.appendChild(defs);
   }
   render(nodes, edges, viewport) {
     this.lastViewport = viewport;
@@ -865,11 +1138,40 @@ var DomRenderer = class {
     const nodeLayer = this.getOrCreateNodeLayer();
     this.clearLayer(nodeLayer);
     for (const node of nodes) {
-      const nodeGroup = this.createNodeGroup(node.id, node.position.x, node.position.y);
-      const circle = this.createCircle();
-      const text = this.createText(node.content);
-      nodeGroup.appendChild(circle);
-      nodeGroup.appendChild(text);
+      const textLayout = computeTextLayout(node.content, 240, {
+        fontSize: 14,
+        fontFamily: "system-ui, -apple-system"
+      });
+      const paddingX = 16;
+      const paddingY = 10;
+      const width = textLayout.width + paddingX * 2;
+      const height = textLayout.height + paddingY * 2;
+      const nodeGroup = this.createNodeGroup(
+        node.id,
+        node.position.x,
+        node.position.y
+      );
+      const isSelected = node.id === this.selectedNodeId;
+      const rect = this.createRoundedRect(width, height, isSelected);
+      nodeGroup.appendChild(rect);
+      const lineHeight = 20;
+      const totalLines = textLayout.lines.length;
+      const yOffset = -((totalLines - 1) * lineHeight) / 2;
+      textLayout.lines.forEach((line, i) => {
+        const text = document.createElementNS(SVG_NS, "text");
+        text.textContent = line;
+        text.setAttribute("x", "0");
+        const lineY = yOffset + i * lineHeight;
+        text.setAttribute("y", String(lineY));
+        text.setAttribute("text-anchor", "middle");
+        text.setAttribute("dominant-baseline", "central");
+        text.setAttribute("font-family", "system-ui, -apple-system");
+        text.setAttribute("font-size", "14");
+        text.setAttribute("fill", "#1C1C1E");
+        text.setAttribute("font-weight", isSelected ? "500" : "400");
+        text.setAttribute("pointer-events", "none");
+        nodeGroup.appendChild(text);
+      });
       nodeLayer.appendChild(nodeGroup);
     }
   }
@@ -877,7 +1179,9 @@ var DomRenderer = class {
     if (!this.svgElement) {
       return document.createElementNS(SVG_NS, "g");
     }
-    let edgeLayer = this.svgElement.querySelector("#edge-layer");
+    let edgeLayer = this.svgElement.querySelector(
+      "#edge-layer"
+    );
     if (!edgeLayer) {
       edgeLayer = document.createElementNS(SVG_NS, "g");
       edgeLayer.setAttribute("id", "edge-layer");
@@ -899,7 +1203,9 @@ var DomRenderer = class {
     if (!this.svgElement) {
       return document.createElementNS(SVG_NS, "g");
     }
-    let nodeLayer = this.svgElement.querySelector("#node-layer");
+    let nodeLayer = this.svgElement.querySelector(
+      "#node-layer"
+    );
     if (!nodeLayer) {
       nodeLayer = document.createElementNS(SVG_NS, "g");
       nodeLayer.setAttribute("id", "node-layer");
@@ -934,27 +1240,35 @@ var DomRenderer = class {
     group.setAttribute("data-node-id", id);
     return group;
   }
-  createCircle() {
-    const circle = document.createElementNS(SVG_NS, "circle");
-    circle.setAttribute("r", "30");
-    circle.setAttribute("cx", "0");
-    circle.setAttribute("cy", "0");
-    circle.setAttribute("fill", "rgba(255, 255, 255, 0.9)");
-    circle.setAttribute("stroke", "rgba(0, 0, 0, 0.15)");
-    circle.setAttribute("stroke-width", "1");
-    return circle;
+  /**
+   * Create Apple-style rounded rectangle node
+   * Per UITokens.md and NodeSelectionVisualSpec.md
+   */
+  createRoundedRect(width, height, isSelected = false) {
+    const rect = document.createElementNS(SVG_NS, "rect");
+    rect.setAttribute("x", String(-width / 2));
+    rect.setAttribute("y", String(-height / 2));
+    rect.setAttribute("width", String(width));
+    rect.setAttribute("height", String(height));
+    rect.setAttribute("rx", "10");
+    rect.setAttribute("ry", "10");
+    rect.setAttribute("fill", "#FFFFFF");
+    rect.setAttribute("filter", "url(#node-shadow)");
+    if (isSelected) {
+      rect.setAttribute("stroke", "#0A84FF");
+      rect.setAttribute("stroke-width", "2");
+    } else {
+      rect.setAttribute("stroke", "#D0D0D0");
+      rect.setAttribute("stroke-width", "1");
+    }
+    return rect;
   }
-  createText(content) {
-    const text = document.createElementNS(SVG_NS, "text");
-    text.setAttribute("x", "0");
-    text.setAttribute("y", "0");
-    text.setAttribute("text-anchor", "middle");
-    text.setAttribute("dominant-baseline", "middle");
-    text.setAttribute("font-family", "-apple-system, BlinkMacSystemFont, sans-serif");
-    text.setAttribute("font-size", "12");
-    text.setAttribute("fill", "#1d1d1f");
-    text.textContent = content;
-    return text;
+  /**
+   * Set selected node ID for visualization
+   * Called by NeroMindView when selection changes
+   */
+  setSelectedNodeId(nodeId) {
+    this.selectedNodeId = nodeId;
   }
 };
 
@@ -1007,7 +1321,14 @@ var NeroMindView = class extends import_obsidian.ItemView {
     this.mindmapContainerEl = null;
     // Phase 3.1: State Management
     this.stateManager = null;
+    // Phase 3.4: Command History
     this.historyManager = null;
+    // Phase 11: Expandable FAB Toolbar
+    this.fabMainEl = null;
+    this.fabMenuEl = null;
+    this.fabUndoBtn = null;
+    this.fabRedoBtn = null;
+    this.isToolbarExpanded = false;
     this.eventBus = null;
     this.unsubscribeSettings = null;
     this.eventUnsubscribers = [];
@@ -1077,7 +1398,6 @@ var NeroMindView = class extends import_obsidian.ItemView {
     this.ensureOverlay();
     this.initializeRenderer(this.plugin.settings.rendererType);
     this.initializeStateManagement();
-    this.createUndoButton();
     this.registerShortcuts();
     this.registerCanvasEvents();
     this.setupViewportObserver();
@@ -1090,7 +1410,8 @@ var NeroMindView = class extends import_obsidian.ItemView {
       }
       this.applySettings(settings);
     });
-    this.renderWelcomeMessage();
+    this.setupFabToolbar();
+    this.initializeDefaultData();
   }
   ensureOverlay() {
     if (!this.mindmapContainerEl)
@@ -1109,14 +1430,24 @@ var NeroMindView = class extends import_obsidian.ItemView {
     overlayDiv.style.pointerEvents = "none";
   }
   initializeRenderer(rendererType) {
-    var _a, _b, _c;
-    if (!this.mindmapContainerEl)
+    var _a, _b, _c, _d, _e, _f, _g;
+    if (!this.mindmapContainerEl) {
+      console.error("[initializeRenderer] mindmapContainerEl is null!");
       return;
+    }
+    console.log(
+      `[initializeRenderer] Initializing ${rendererType} renderer...`
+    );
     this.destroyRenderer();
     this.rendererType = rendererType;
     this.renderer = this.createRenderer(rendererType);
     this.renderer.init(this.mindmapContainerEl);
     this.renderSurfaceEl = (_c = (_b = (_a = this.renderer).getSurfaceElement) == null ? void 0 : _b.call(_a)) != null ? _c : this.mindmapContainerEl;
+    console.log("[initializeRenderer] Renderer surface element:", {
+      surfaceType: (_d = this.renderSurfaceEl) == null ? void 0 : _d.tagName,
+      isAttached: (_e = this.renderSurfaceEl) == null ? void 0 : _e.isConnected,
+      parentElement: (_g = (_f = this.renderSurfaceEl) == null ? void 0 : _f.parentElement) == null ? void 0 : _g.className
+    });
     this.updateViewportBounds();
   }
   createRenderer(rendererType) {
@@ -1350,13 +1681,24 @@ var NeroMindView = class extends import_obsidian.ItemView {
    * - StateManager 상태 직접 조작
    */
   renderSnapshot(snapshot) {
-    console.log("Rendering snapshot:", {
+    console.log("[renderSnapshot] Rendering snapshot:", {
       nodeCount: snapshot.nodes.length,
       edgeCount: snapshot.edges.length,
-      rootId: snapshot.rootId
+      rootId: snapshot.rootId,
+      hasRenderer: !!this.renderer,
+      rendererType: this.rendererType
     });
+    if (!this.renderer) {
+      console.error("[renderSnapshot] Renderer is null! Cannot render.");
+      return;
+    }
     this.lastSnapshot = snapshot;
     const visibleNodeIds = this.computeVisibleNodeIds(snapshot);
+    console.log("[renderSnapshot] Visible nodes:", {
+      total: snapshot.nodes.length,
+      visible: visibleNodeIds.size,
+      visibleIds: Array.from(visibleNodeIds)
+    });
     this.applyVisibleNodes(snapshot, visibleNodeIds);
   }
   applySettings(settings) {
@@ -1484,8 +1826,14 @@ var NeroMindView = class extends import_obsidian.ItemView {
     this.visibleNodeIds = visibleNodeIds;
     if (!this.renderer)
       return;
-    const { nodes, edges } = this.buildRenderData(snapshot, visibleNodeIds);
-    this.renderer.render(nodes, edges, this.currentViewport);
+    const visibleNodes = snapshot.nodes.filter((n) => visibleNodeIds.has(n.id));
+    const visibleEdges = snapshot.edges.filter(
+      (e) => visibleNodeIds.has(e.fromNodeId) && visibleNodeIds.has(e.toNodeId)
+    );
+    if (this.renderer && "setSelectedNodeId" in this.renderer) {
+      this.renderer.setSelectedNodeId(snapshot.selectedNodeId || null);
+    }
+    this.renderer.render(visibleNodes, visibleEdges, this.currentViewport);
   }
   buildRenderData(snapshot, visibleNodeIds) {
     const nodes = snapshot.nodes.filter((node) => visibleNodeIds.has(node.id));
@@ -1714,12 +2062,12 @@ var NeroMindView = class extends import_obsidian.ItemView {
     const rect = this.mindmapContainerEl.getBoundingClientRect();
     const x = evt.clientX - rect.left;
     const y = evt.clientY - rect.top;
-    const nodeId = `node-${Date.now()}`;
+    const nodeId = crypto.randomUUID();
     const newNode = {
       id: nodeId,
       content: "New Node",
       position: { x, y },
-      userPosition: false,
+      userPosition: true,
       parentId: null,
       childIds: [],
       direction: null,
@@ -1847,6 +2195,191 @@ var NeroMindView = class extends import_obsidian.ItemView {
    */
   addDisposable(disposable) {
     this.disposables.push(disposable);
+  }
+  /**
+   * Phase 10: Initialize default data
+   *
+   * Per CentralRoot_LeftRightLayout.md: Root node is the "foundation of the map"
+   * and should not be deletable via Undo. We create it directly in state without
+   * going through history.
+   */
+  initializeDefaultData() {
+    if (!this.stateManager || !this.historyManager) {
+      console.error(
+        "[initializeDefaultData] StateManager or HistoryManager not initialized!"
+      );
+      return;
+    }
+    const snapshot = this.stateManager.getSnapshot();
+    console.log("[initializeDefaultData] Current state:", {
+      nodeCount: snapshot.nodes.length,
+      rootId: snapshot.rootId
+    });
+    if (snapshot.nodes.length > 0) {
+      console.log("[initializeDefaultData] Data already exists, rendering...");
+      this.renderSnapshot(snapshot);
+      return;
+    }
+    console.log("[initializeDefaultData] Creating permanent root node...");
+    const center = this.getViewportCenter();
+    const rootNode = {
+      id: "root",
+      // Fixed ID for consistency
+      content: "Central Topic",
+      position: center,
+      userPosition: false,
+      // Allow auto-layout
+      parentId: null,
+      childIds: [],
+      direction: null,
+      isPinned: false,
+      isCollapsed: false,
+      linkedNotePath: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    try {
+      console.log(
+        "[initializeDefaultData] Creating root node (bypassing history)..."
+      );
+      this.stateManager.addNode(rootNode);
+      const newSnapshot = this.stateManager.getSnapshot();
+      console.log("[initializeDefaultData] Root node created:", {
+        nodeCount: newSnapshot.nodes.length,
+        rootId: newSnapshot.rootId,
+        rootPosition: rootNode.position,
+        canUndo: this.historyManager.canUndo()
+        // Should be false
+      });
+      this.renderSnapshot(newSnapshot);
+      this.updateUndoButton();
+      console.log(
+        "[initializeDefaultData] Initialization complete! Root is permanent."
+      );
+    } catch (error) {
+      console.error("[initializeDefaultData] Failed to initialize:", error);
+    }
+  }
+  /**
+   * Phase 11: Setup FAB Toolbar
+   * Author: Nero-kk (https://github.com/Nero-kk)
+   * Blog: http://nero-k.tistory.com
+   */
+  setupFabToolbar() {
+    console.log("\u{1F680} Attempting to render FAB Toolbar...");
+    if (!this.containerEl) {
+      console.error("\u274C FAB Toolbar: containerEl is null!");
+      return;
+    }
+    this.fabMainEl = this.containerEl.createDiv({ cls: "neromind-fab-main" });
+    this.fabMainEl.style.position = "fixed";
+    this.fabMainEl.style.top = "16px";
+    this.fabMainEl.style.left = "16px";
+    this.fabMainEl.style.width = "36px";
+    this.fabMainEl.style.height = "36px";
+    this.fabMainEl.style.zIndex = "99999";
+    this.fabMainEl.style.display = "flex";
+    this.fabMainEl.style.alignItems = "center";
+    this.fabMainEl.style.justifyContent = "center";
+    this.fabMainEl.style.borderRadius = "8px";
+    this.fabMainEl.style.background = "rgba(255, 255, 255, 0.95)";
+    this.fabMainEl.style.border = "1px solid rgba(0, 0, 0, 0.08)";
+    this.fabMainEl.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.12)";
+    this.fabMainEl.style.cursor = "pointer";
+    this.fabMainEl.innerHTML = `
+      <svg class="neromind-fab-main-icon" viewBox="0 0 24 24" style="width: 20px; height: 20px;">
+        <path d="M3 12h18M3 6h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    `;
+    this.fabMenuEl = this.containerEl.createDiv({ cls: "neromind-fab-menu" });
+    this.fabMenuEl.style.position = "fixed";
+    this.fabMenuEl.style.top = "116px";
+    this.fabMenuEl.style.left = "20px";
+    this.fabMenuEl.style.zIndex = "99998";
+    this.fabMenuEl.style.display = "flex";
+    this.fabMenuEl.style.flexDirection = "column";
+    this.fabMenuEl.style.gap = "4px";
+    this.fabMenuEl.style.borderRadius = "12px";
+    this.fabMenuEl.style.padding = "8px";
+    this.fabMenuEl.style.background = "rgba(30, 30, 30, 0.92)";
+    this.fabMenuEl.style.opacity = "0";
+    this.fabMenuEl.style.pointerEvents = "none";
+    this.fabMenuEl.style.transition = "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)";
+    this.fabUndoBtn = this.fabMenuEl.createDiv({
+      cls: "neromind-fab-item disabled"
+    });
+    this.fabUndoBtn.style.width = "40px";
+    this.fabUndoBtn.style.height = "40px";
+    this.fabUndoBtn.style.display = "flex";
+    this.fabUndoBtn.style.alignItems = "center";
+    this.fabUndoBtn.style.justifyContent = "center";
+    this.fabUndoBtn.style.cursor = "pointer";
+    this.fabUndoBtn.style.borderRadius = "8px";
+    this.fabUndoBtn.innerHTML = `
+      <svg class="neromind-fab-item-icon" viewBox="0 0 24 24" style="width: 20px; height: 20px; stroke: white;">
+        <path d="M3 7v6h6M3 13a9 9 0 1 0 2-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    `;
+    this.fabRedoBtn = this.fabMenuEl.createDiv({
+      cls: "neromind-fab-item disabled"
+    });
+    this.fabRedoBtn.style.width = "40px";
+    this.fabRedoBtn.style.height = "40px";
+    this.fabRedoBtn.style.display = "flex";
+    this.fabRedoBtn.style.alignItems = "center";
+    this.fabRedoBtn.style.justifyContent = "center";
+    this.fabRedoBtn.style.cursor = "pointer";
+    this.fabRedoBtn.style.borderRadius = "8px";
+    this.fabRedoBtn.innerHTML = `
+      <svg class="neromind-fab-item-icon" viewBox="0 0 24 24" style="width: 20px; height: 20px; stroke: white;">
+        <path d="M21 7v6h-6M21 13a9 9 0 1 1-2-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    `;
+    this.fabMainEl.addEventListener("click", () => this.toggleFabMenu());
+    this.fabUndoBtn.addEventListener("click", () => this.handleFabUndo());
+    this.fabRedoBtn.addEventListener("click", () => this.handleFabRedo());
+    console.log("\u2705 FAB Toolbar created successfully!", {
+      mainButton: this.fabMainEl,
+      menu: this.fabMenuEl,
+      undoBtn: this.fabUndoBtn,
+      redoBtn: this.fabRedoBtn
+    });
+  }
+  toggleFabMenu() {
+    this.isToolbarExpanded = !this.isToolbarExpanded;
+    if (this.isToolbarExpanded) {
+      this.fabMainEl.style.width = "240px";
+      console.log("[FAB] Expanded");
+    } else {
+      this.fabMainEl.style.width = "40px";
+      console.log("[FAB] Collapsed");
+    }
+  }
+  handleFabUndo() {
+    var _a;
+    if (!((_a = this.historyManager) == null ? void 0 : _a.canUndo()))
+      return;
+    try {
+      const snapshot = this.historyManager.undo();
+      this.renderSnapshot(snapshot);
+      this.updateFabButtons();
+    } catch (error) {
+      console.error("[FAB] Undo failed:", error);
+    }
+  }
+  handleFabRedo() {
+    console.log("[FAB] Redo not yet implemented");
+  }
+  updateFabButtons() {
+    var _a, _b, _c;
+    if (!this.historyManager)
+      return;
+    if (this.historyManager.canUndo()) {
+      (_a = this.fabUndoBtn) == null ? void 0 : _a.removeClass("disabled");
+    } else {
+      (_b = this.fabUndoBtn) == null ? void 0 : _b.addClass("disabled");
+    }
+    (_c = this.fabRedoBtn) == null ? void 0 : _c.addClass("disabled");
   }
 };
 

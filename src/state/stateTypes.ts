@@ -28,6 +28,8 @@ export interface StateCommand {
 /**
  * 렌더러 등 외부 소비자를 위한 읽기 전용 스냅샷
  * - 내부 상태 객체에 대한 직접 참조를 노출하지 않는다.
+ *
+ * Phase 5.1: selectedNodeId는 persistentState.ui에서 가져옴
  */
 export interface StateSnapshot {
 	readonly nodes: ReadonlyArray<MindMapNode>;
@@ -35,7 +37,7 @@ export interface StateSnapshot {
 	readonly rootId: NodeId;
 	readonly pinnedNodeIds: ReadonlyArray<NodeId>;
 	readonly collapsedNodeIds: ReadonlyArray<NodeId>;
-	readonly selectedNodeId: NodeId | null;
+	readonly selectedNodeId: NodeId | null; // Phase 5.1: persistentState.ui.selectedNodeId
 	readonly editingNodeId: NodeId | null;
 }
 
