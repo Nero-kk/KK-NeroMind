@@ -78,45 +78,56 @@ var MoveNodeCommand;
 var init_MoveNodeCommand = __esm({
   "src/history/MoveNodeCommand.ts"() {
     MoveNodeCommand = class {
-      constructor(nodeId, from, to) {
-        this.nodeId = nodeId;
-        this.from = from;
-        this.to = to;
+      constructor(nodeId, nextPosition) {
         this.description = "Move node";
+        this.prevPosition = null;
+        this.prevUserPosition = null;
+        this.lastAppliedAt = 0;
+        this.createdAt = Date.now();
+        this.nodeId = nodeId;
+        this.nextPosition = { ...nextPosition };
       }
-      /**
-       * execute: 노드 위치를 to로 이동
-       *
-       * 동작:
-       * 1. 노드를 persistent state에서 조회
-       * 2. position을 to로 변경
-       * 3. updatedAt 자동 갱신
-       */
       execute(context) {
+        var _a;
         const node = context.persistent.graph.nodes.get(this.nodeId);
-        if (!node) {
+        if (!node)
           return;
+        if (!this.prevPosition) {
+          this.prevPosition = { ...node.position };
         }
-        node.position.x = this.to.x;
-        node.position.y = this.to.y;
+        if (this.prevUserPosition === null) {
+          this.prevUserPosition = node.userPosition;
+        }
+        node.position = { ...this.nextPosition };
+        node.userPosition = true;
         node.updatedAt = Date.now();
+        this.lastAppliedAt = node.updatedAt;
+        (_a = context.emit) == null ? void 0 : _a.call(context, "nodeUpdated", { node });
       }
-      /**
-       * undo: 노드 위치를 from으로 복원
-       *
-       * 동작:
-       * 1. 노드를 persistent state에서 조회
-       * 2. position을 from으로 복원
-       * 3. updatedAt 자동 갱신
-       */
       undo(context) {
+        var _a;
         const node = context.persistent.graph.nodes.get(this.nodeId);
-        if (!node) {
+        if (!node || !this.prevPosition || this.prevUserPosition === null)
           return;
-        }
-        node.position.x = this.from.x;
-        node.position.y = this.from.y;
+        node.position = { ...this.prevPosition };
+        node.userPosition = this.prevUserPosition;
         node.updatedAt = Date.now();
+        (_a = context.emit) == null ? void 0 : _a.call(context, "nodeUpdated", { node });
+      }
+      getNodeId() {
+        return this.nodeId;
+      }
+      getLastAppliedAt() {
+        return this.lastAppliedAt;
+      }
+      updateNextPosition(nextPosition) {
+        this.nextPosition = { ...nextPosition };
+      }
+      getNextPosition() {
+        return { ...this.nextPosition };
+      }
+      getCreatedAt() {
+        return this.createdAt;
       }
     };
   }
@@ -172,6 +183,15 @@ var import_obsidian3 = require("obsidian");
 
 // src/views/NeroMindView.ts
 var import_obsidian = require("obsidian");
+
+// src/types/index.ts
+var SVG_NS = "http://www.w3.org/2000/svg";
+var NODE_CONSTANTS = {
+  MIN_WIDTH: 120,
+  HEIGHT: 40,
+  BORDER_RADIUS: 12,
+  PADDING: 12
+};
 
 // src/state/StateManager.ts
 var StateManager = class {
@@ -448,7 +468,8 @@ var StateManager = class {
   getContext() {
     return {
       persistent: this.persistentState,
-      ephemeral: this.ephemeralState
+      ephemeral: this.ephemeralState,
+      emit: this.emitSafe.bind(this)
     };
   }
   /**
@@ -534,7 +555,41 @@ var StateManager = class {
   }
 };
 
+// src/history/TransactionCommand.ts
+var TransactionCommand = class {
+  constructor(commands, description) {
+    this.description = "Transaction";
+    this.commands = commands;
+    if (description) {
+      this.description = description;
+    }
+  }
+  execute(context) {
+    const executed = [];
+    try {
+      for (const command of this.commands) {
+        command.execute(context);
+        executed.push(command);
+      }
+    } catch (error) {
+      for (let i = executed.length - 1; i >= 0; i -= 1) {
+        try {
+          executed[i].undo(context);
+        } catch (e) {
+        }
+      }
+      throw error;
+    }
+  }
+  undo(context) {
+    for (let i = this.commands.length - 1; i >= 0; i -= 1) {
+      this.commands[i].undo(context);
+    }
+  }
+};
+
 // src/history/HistoryManager.ts
+init_MoveNodeCommand();
 var HistoryManager = class {
   /**
    * HistoryManager 생성자
@@ -551,6 +606,8 @@ var HistoryManager = class {
   constructor(stateManager) {
     this.commandQueue = [];
     this.MAX_HISTORY = 10;
+    this.coalesceWindowMs = 300;
+    this.coalesceBlocked = false;
     this.stateManager = stateManager;
   }
   /**
@@ -571,12 +628,57 @@ var HistoryManager = class {
    * - EventBus 발행
    */
   execute(command) {
+    if (Array.isArray(command)) {
+      const transaction = new TransactionCommand(command);
+      return this.executeSingle(transaction);
+    }
+    return this.executeSingle(command);
+  }
+  endMoveCoalescing() {
+    this.coalesceBlocked = true;
+  }
+  executeSingle(command) {
+    const mergedSnapshot = this.tryCoalesceMove(command);
+    if (mergedSnapshot) {
+      return mergedSnapshot;
+    }
     const snapshot = this.stateManager.apply(command);
     this.commandQueue.push(command);
     if (this.commandQueue.length > this.MAX_HISTORY) {
       this.commandQueue.shift();
     }
     return snapshot;
+  }
+  tryCoalesceMove(command) {
+    if (!(command instanceof MoveNodeCommand)) {
+      this.coalesceBlocked = false;
+      return null;
+    }
+    if (this.coalesceBlocked) {
+      this.coalesceBlocked = false;
+      return null;
+    }
+    const lastCommand = this.commandQueue[this.commandQueue.length - 1];
+    if (!(lastCommand instanceof MoveNodeCommand)) {
+      return null;
+    }
+    if (!this.canMergeMoveCommands(lastCommand, command)) {
+      return null;
+    }
+    lastCommand.updateNextPosition(command.getNextPosition());
+    const snapshot = this.stateManager.apply(lastCommand);
+    return snapshot;
+  }
+  canMergeMoveCommands(previous, next) {
+    if (previous.getNodeId() !== next.getNodeId()) {
+      return false;
+    }
+    const lastAppliedAt = previous.getLastAppliedAt();
+    const now = next.getCreatedAt();
+    if (lastAppliedAt === 0) {
+      return false;
+    }
+    return now - lastAppliedAt <= this.coalesceWindowMs;
   }
   /**
    * 마지막 작업 취소
@@ -740,98 +842,102 @@ var EventBus = class {
   }
 };
 
-// src/types/index.ts
-var DEFAULT_SETTINGS = {
-  centerOnNodeCreate: true,
-  autoAlign: true,
-  minimap: {
-    enabled: true,
-    size: "medium",
-    opacity: 0.9
-  },
-  theme: "light",
-  animationDuration: 200,
-  nodeGap: {
-    horizontal: 100,
-    vertical: 60
+// src/rendering/CanvasRenderer.ts
+var CanvasRenderer = class {
+  constructor() {
+    this.canvasEl = null;
+    this.context = null;
+    this.containerEl = null;
+    this.lastViewport = null;
+  }
+  init(container) {
+    this.containerEl = container;
+    this.canvasEl = document.createElement("canvas");
+    this.canvasEl.className = "neromind-canvas";
+    this.canvasEl.style.width = "100%";
+    this.canvasEl.style.height = "100%";
+    this.context = this.canvasEl.getContext("2d");
+    this.containerEl.appendChild(this.canvasEl);
+  }
+  render(nodes, edges, viewport) {
+    this.lastViewport = viewport;
+    if (!this.canvasEl || !this.context)
+      return;
+    this.resizeCanvas(viewport);
+    const ctx = this.context;
+    ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height);
+    ctx.save();
+    ctx.translate(-viewport.left, -viewport.top);
+    this.drawEdges(ctx, nodes, edges);
+    this.drawNodes(ctx, nodes);
+    ctx.restore();
+  }
+  update(nodes, edges) {
+    if (!this.lastViewport)
+      return;
+    this.render(nodes, edges, this.lastViewport);
+  }
+  destroy() {
+    if (this.canvasEl) {
+      this.canvasEl.remove();
+    }
+    this.canvasEl = null;
+    this.context = null;
+    this.containerEl = null;
+    this.lastViewport = null;
+  }
+  // Phase 10: Expanded return type to Element | null to support interface consistency
+  getSurfaceElement() {
+    return this.canvasEl;
+  }
+  resizeCanvas(viewport) {
+    if (!this.canvasEl)
+      return;
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.max(1, Math.floor(viewport.width));
+    const height = Math.max(1, Math.floor(viewport.height));
+    this.canvasEl.width = width * dpr;
+    this.canvasEl.height = height * dpr;
+    const ctx = this.context;
+    if (ctx) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+  }
+  drawEdges(ctx, nodes, edges) {
+    const nodePositionMap = /* @__PURE__ */ new Map();
+    for (const node of nodes) {
+      nodePositionMap.set(node.id, node.position);
+    }
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.2)";
+    ctx.lineWidth = 2;
+    for (const edge of edges) {
+      const from = nodePositionMap.get(edge.fromNodeId);
+      const to = nodePositionMap.get(edge.toNodeId);
+      if (!from || !to)
+        continue;
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+    }
+  }
+  drawNodes(ctx, nodes) {
+    for (const node of nodes) {
+      ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.15)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(node.position.x, node.position.y, 30, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#1d1d1f";
+      ctx.font = "12px -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(node.content, node.position.x, node.position.y);
+    }
   }
 };
-var SVG_NS = "http://www.w3.org/2000/svg";
-
-// src/layout/CenterRootLayout.ts
-var HORIZONTAL_GAP = 100;
-var VERTICAL_GAP = 60;
-function computeCenterRootLayout(nodes, viewport) {
-  const nodeMap = /* @__PURE__ */ new Map();
-  for (const node of nodes) {
-    nodeMap.set(node.id, node);
-  }
-  const root = nodes.find((n) => n.parentId === null);
-  if (!root) {
-    return {};
-  }
-  const tree = buildTree(root.id, nodeMap);
-  const positions = {};
-  const rootX = viewport.width / 2;
-  const rootY = viewport.height / 2;
-  positions[root.id] = { x: rootX, y: rootY };
-  console.log("[CenterRootLayout] \uB8E8\uD2B8 \uB178\uB4DC \uC911\uC559 \uBC30\uCE58:", {
-    viewport,
-    rootId: root.id,
-    rootPosition: { x: rootX, y: rootY }
-  });
-  const children = tree.children;
-  for (let i = 0; i < children.length; i++) {
-    const child = children[i];
-    const side = i % 2 === 0 ? "right" : "left";
-    layoutSubtree(child, side, rootX, rootY, positions, nodeMap);
-  }
-  return positions;
-}
-function buildTree(nodeId, nodeMap) {
-  const node = nodeMap.get(nodeId);
-  if (!node) {
-    throw new Error(`Node not found: ${nodeId}`);
-  }
-  const children = [];
-  for (const childId of node.childIds) {
-    children.push(buildTree(childId, nodeMap));
-  }
-  return {
-    id: nodeId,
-    parentId: node.parentId,
-    children
-  };
-}
-function layoutSubtree(tree, side, parentX, parentY, positions, nodeMap) {
-  const x = side === "right" ? parentX + HORIZONTAL_GAP : parentX - HORIZONTAL_GAP;
-  const totalHeight = calculateSubtreeHeight(tree);
-  const y = parentY;
-  positions[tree.id] = { x, y };
-  if (tree.children.length > 0) {
-    let currentY = y - totalHeight / 2;
-    for (const child of tree.children) {
-      const childHeight = calculateSubtreeHeight(child);
-      const childCenterY = currentY + childHeight / 2;
-      layoutSubtree(child, side, x, childCenterY, positions, nodeMap);
-      currentY += childHeight + VERTICAL_GAP;
-    }
-  }
-}
-function calculateSubtreeHeight(tree) {
-  if (tree.children.length === 0) {
-    return 0;
-  }
-  let totalHeight = 0;
-  for (let i = 0; i < tree.children.length; i++) {
-    const childHeight = calculateSubtreeHeight(tree.children[i]);
-    totalHeight += Math.max(childHeight, 0);
-    if (i < tree.children.length - 1) {
-      totalHeight += VERTICAL_GAP;
-    }
-  }
-  return totalHeight;
-}
 
 // src/layout/NodeTextLayout.ts
 function computeTextLayout(text, maxWidth, metrics = { fontSize: 12, fontFamily: "sans-serif" }) {
@@ -911,307 +1017,171 @@ function splitLongWord(word, maxWidth, fontSize) {
   return parts.length > 0 ? parts : [word];
 }
 
-// src/rendering/Renderer.ts
-var Renderer = class {
-  constructor(svgElement) {
-    this.rafId = null;
-    // Phase 5: Drag 상태
-    this.draggingNodeId = null;
-    this.dragOffset = { x: 0, y: 0 };
-    this.dragStartPosition = { x: 0, y: 0 };
-    // Phase 5: StateManager 참조 (drag 완료 시 moveNode 호출용)
-    this.stateManager = null;
-    /**
-     * Phase 6.1: 초기 viewport 캐싱
-     *
-     * 책임:
-     * - 플러그인 최초 로딩 시 1회만 viewport 크기 계산
-     * - 이후 resize/pan/zoom 시 viewport 재계산 금지
-     * - 노드의 절대 위치를 고정하여 transform-layer만 변경
-     *
-     * 이유:
-     * - resize 시 layout 재계산하면 노드 위치가 변경됨
-     * - pan/zoom은 transform-layer로 처리해야 함
-     * - 초기 위치를 고정하여 일관된 좌표계 유지
-     */
-    this.initialViewport = null;
-    /**
-     * pointermove: 드래그 preview (state 변경 ❌)
-     *
-     * 동작:
-     * 1. draggingNodeId 없으면 무시
-     * 2. 포인터 위치 → SVG 좌표 변환
-     * 3. 새 위치 계산 (포인터 - dragOffset)
-     * 4. DOM transform 직접 변경 (state 변경 없음)
-     *
-     * 핵심: StateManager 호출 ❌, Command 생성 ❌
-     */
-    this.handlePointerMove = (e) => {
-      var _a;
-      if (!this.draggingNodeId)
-        return;
-      const pt = this.svgElement.createSVGPoint();
-      pt.x = e.clientX;
-      pt.y = e.clientY;
-      const svgP = pt.matrixTransform(
-        (_a = this.svgElement.getScreenCTM()) == null ? void 0 : _a.inverse()
-      );
-      const newX = svgP.x - this.dragOffset.x;
-      const newY = svgP.y - this.dragOffset.y;
-      const nodeGroup = this.svgElement.querySelector(
-        `#node-${this.draggingNodeId}`
-      );
-      if (nodeGroup) {
-        nodeGroup.setAttribute("transform", `translate(${newX}, ${newY})`);
-      }
-    };
-    /**
-     * pointerup: 드래그 완료 (MoveNodeCommand 생성)
-     *
-     * 동작:
-     * 1. draggingNodeId 없으면 무시
-     * 2. 포인터 위치 → SVG 좌표 변환
-     * 3. 최종 위치 계산
-     * 4. StateManager.moveNode() 호출 (단 1회 Command 생성)
-     * 5. 드래그 상태 초기화
-     * 6. 전역 리스너 제거
-     *
-     * 핵심: 여기서만 StateManager.moveNode() 호출
-     */
-    this.handlePointerUp = (e) => {
-      var _a;
-      if (!this.draggingNodeId)
-        return;
-      const pt = this.svgElement.createSVGPoint();
-      pt.x = e.clientX;
-      pt.y = e.clientY;
-      const svgP = pt.matrixTransform(
-        (_a = this.svgElement.getScreenCTM()) == null ? void 0 : _a.inverse()
-      );
-      const finalX = svgP.x - this.dragOffset.x;
-      const finalY = svgP.y - this.dragOffset.y;
-      if (this.stateManager) {
-        this.stateManager.moveNode(this.draggingNodeId, finalX, finalY);
-      }
-      this.draggingNodeId = null;
-      this.dragOffset = { x: 0, y: 0 };
-      this.dragStartPosition = { x: 0, y: 0 };
-      document.removeEventListener("pointermove", this.handlePointerMove);
-      document.removeEventListener("pointerup", this.handlePointerUp);
-      document.body.style.cursor = "";
-    };
-    this.svgElement = svgElement;
-    this.setupCanvasBackgroundHandler();
+// src/rendering/DomRenderer.ts
+var DomRenderer = class {
+  constructor() {
+    this.svgElement = null;
+    this.containerEl = null;
+    this.lastViewport = null;
+    this.selectedNodeId = null;
+  }
+  init(container) {
+    this.containerEl = container;
+    this.svgElement = document.createElementNS(SVG_NS, "svg");
+    this.svgElement.setAttribute("class", "neromind-canvas");
+    this.svgElement.setAttribute("width", "100%");
+    this.svgElement.setAttribute("height", "100%");
+    const bgGroup = document.createElementNS(SVG_NS, "g");
+    bgGroup.setAttribute("id", "background-layer");
+    this.svgElement.appendChild(bgGroup);
+    const transformGroup = document.createElementNS(SVG_NS, "g");
+    transformGroup.setAttribute("id", "transform-layer");
+    transformGroup.setAttribute("transform", "translate(0, 0) scale(1)");
+    this.svgElement.appendChild(transformGroup);
+    const edgeGroup = document.createElementNS(SVG_NS, "g");
+    edgeGroup.setAttribute("id", "edge-layer");
+    transformGroup.appendChild(edgeGroup);
+    const nodeGroup = document.createElementNS(SVG_NS, "g");
+    nodeGroup.setAttribute("id", "node-layer");
+    transformGroup.appendChild(nodeGroup);
+    this.containerEl.appendChild(this.svgElement);
+    this.setupShadowFilter();
   }
   /**
-   * Phase 5: StateManager 주입
-   *
-   * drag 완료 시 moveNode() 호출을 위해 필요
-   * Phase 5.1: 선택 해제를 위한 clearSelection() 호출
+   * Setup Apple-style shadow filter for nodes
+   * Per UITokens.md: 0 1px 2px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.06)
    */
-  setStateManager(stateManager) {
-    this.stateManager = stateManager;
+  setupShadowFilter() {
+    if (!this.svgElement)
+      return;
+    const defs = document.createElementNS(SVG_NS, "defs");
+    const filter = document.createElementNS(SVG_NS, "filter");
+    filter.setAttribute("id", "node-shadow");
+    filter.setAttribute("x", "-50%");
+    filter.setAttribute("y", "-50%");
+    filter.setAttribute("width", "200%");
+    filter.setAttribute("height", "200%");
+    const feGaussianBlur = document.createElementNS(SVG_NS, "feGaussianBlur");
+    feGaussianBlur.setAttribute("in", "SourceAlpha");
+    feGaussianBlur.setAttribute("stdDeviation", "4");
+    const feOffset = document.createElementNS(SVG_NS, "feOffset");
+    feOffset.setAttribute("dx", "0");
+    feOffset.setAttribute("dy", "2");
+    feOffset.setAttribute("result", "offsetblur");
+    const feComponentTransfer = document.createElementNS(
+      SVG_NS,
+      "feComponentTransfer"
+    );
+    const feFuncA = document.createElementNS(SVG_NS, "feFuncA");
+    feFuncA.setAttribute("type", "linear");
+    feFuncA.setAttribute("slope", "0.08");
+    feComponentTransfer.appendChild(feFuncA);
+    const feMerge = document.createElementNS(SVG_NS, "feMerge");
+    const feMergeNode1 = document.createElementNS(SVG_NS, "feMergeNode");
+    feMergeNode1.setAttribute("in", "offsetblur");
+    const feMergeNode2 = document.createElementNS(SVG_NS, "feMergeNode");
+    feMergeNode2.setAttribute("in", "SourceGraphic");
+    feMerge.appendChild(feMergeNode1);
+    feMerge.appendChild(feMergeNode2);
+    filter.appendChild(feGaussianBlur);
+    filter.appendChild(feOffset);
+    filter.appendChild(feComponentTransfer);
+    filter.appendChild(feMerge);
+    defs.appendChild(filter);
+    this.svgElement.appendChild(defs);
   }
-  /**
-   * Phase 5.1: Canvas background 클릭 핸들러 설정
-   *
-   * SVG 빈 공간 클릭 시 선택 해제
-   */
-  setupCanvasBackgroundHandler() {
-    this.svgElement.addEventListener("pointerdown", (e) => {
-      const target = e.target;
-      if (target === this.svgElement || target.id === "transform-layer") {
-        if (this.stateManager) {
-          this.stateManager.clearSelection();
-        }
-      }
-    });
+  render(nodes, edges, viewport) {
+    this.lastViewport = viewport;
+    if (!this.svgElement)
+      return;
+    this.svgElement.setAttribute(
+      "viewBox",
+      `${viewport.left} ${viewport.top} ${viewport.width} ${viewport.height}`
+    );
+    this.renderEdges(nodes, edges);
+    this.renderNodes(nodes);
   }
-  /**
-   * StateSnapshot을 SVG로 렌더링
-   *
-   * Phase 4.0 렌더링 순서:
-   * 1. edge-layer: 엣지 먼저 (뒤에 그려짐)
-   * 2. node-layer: 노드 나중에 (앞에 그려짐)
-   *
-   * Phase 6.0 레이아웃 통합:
-   * - computeCenterRootLayout 호출하여 실제 렌더 좌표 계산
-   * - node.position 대신 layout 결과 사용
-   * - viewport는 viewBox 기준 (SVG 내부 좌표계)
-   *
-   * @param snapshot - 렌더링할 StateSnapshot
-   */
-  render(snapshot) {
-    if (this.initialViewport === null) {
-      this.initialViewport = this.getViewportSize();
-      console.log("[Renderer.render] \u{1F3AF} \uCD08\uAE30 viewport \uCE90\uC2F1 (1\uD68C\uB9CC):", this.initialViewport);
+  update(nodes, edges) {
+    if (!this.lastViewport)
+      return;
+    this.render(nodes, edges, this.lastViewport);
+  }
+  destroy() {
+    if (this.svgElement) {
+      this.svgElement.remove();
+      this.svgElement = null;
     }
-    const layout = computeCenterRootLayout(snapshot.nodes, this.initialViewport);
-    const svgViewBox = this.svgElement.viewBox.baseVal;
-    const svgBoundingRect = this.svgElement.getBoundingClientRect();
-    console.log("[\u{1F50D} \uC88C\uD45C\uACC4 \uAC80\uC99D]", {
-      "viewBox.baseVal": {
-        x: svgViewBox.x,
-        y: svgViewBox.y,
-        width: svgViewBox.width,
-        height: svgViewBox.height
-      },
-      "getBoundingClientRect()": {
-        top: svgBoundingRect.top,
-        left: svgBoundingRect.left,
-        width: svgBoundingRect.width,
-        height: svgBoundingRect.height
-      },
-      "initialViewport (\uCE90\uC2F1\uB428)": this.initialViewport,
-      "\uD604\uC7AC \uC2E4\uC81C \uD06C\uAE30\uC640 \uC77C\uCE58 \uC5EC\uBD80": {
-        widthMatch: Math.abs(svgBoundingRect.width - this.initialViewport.width) < 1,
-        heightMatch: Math.abs(svgBoundingRect.height - this.initialViewport.height) < 1
-      }
-    });
-    if (snapshot.rootId && layout[snapshot.rootId]) {
-      const rootPos = layout[snapshot.rootId];
-      console.log("[\u{1F50D} \uC88C\uD45C\uACC4 \uAC80\uC99D] \uB8E8\uD2B8 \uB178\uB4DC \uCD5C\uC885 transform:", {
-        nodeId: snapshot.rootId,
-        x: rootPos.x,
-        y: rootPos.y,
-        transform: `translate(${rootPos.x}, ${rootPos.y})`
-      });
-    }
-    console.log("[Renderer.render] \uB80C\uB354\uB9C1 \uC2DC\uC791:", {
-      viewport: this.initialViewport,
-      nodeCount: snapshot.nodes.length,
-      rootId: snapshot.rootId,
-      layoutSample: Object.keys(layout).length > 0 ? { [snapshot.rootId || "none"]: layout[snapshot.rootId || ""] } : "empty"
-    });
-    this.renderEdges(snapshot, layout);
-    this.renderNodes(snapshot, layout);
+    this.containerEl = null;
+    this.lastViewport = null;
   }
-  /**
-   * Phase 6.0: Viewport 크기 계산
-   *
-   * 책임:
-   * - ✅ 실제 DOM viewport 크기를 기반으로 계산 (getBoundingClientRect)
-   * - ✅ viewBox가 아닌 사용자가 보는 실제 화면 기준
-   * - ✅ 이 좌표계가 SVG transform 좌표계와 일치함
-   *
-   * 이유:
-   * - viewBox 좌표계와 DOM viewport 좌표계가 다를 수 있음
-   * - 사용자가 보는 "시각적 중앙"은 DOM viewport 기준
-   * - CenterRootLayout은 이 DOM 좌표계 기준으로 계산해야 정확
-   *
-   * 검증 체크리스트:
-   * ✓ 루트 노드가 항상 시각적 중앙에 오는지
-   * ✓ 창 리사이즈 시 재계산 되는지 (render() 호출 시마다 계산)
-   * ✓ viewBox 설정과 무관하게 동일한 시각적 결과
-   *
-   * @returns { width, height } viewport 크기 (DOM 기준)
-   */
-  getViewportSize() {
-    const rect = this.svgElement.getBoundingClientRect();
-    return {
-      width: rect.width || 800,
-      // fallback: 800px
-      height: rect.height || 600
-      // fallback: 600px
-    };
+  // Phase 10: Expanded return type to Element | null to support SVG rendering
+  getSurfaceElement() {
+    return this.svgElement;
   }
-  /**
-   * Phase 4.0: 엣지 렌더링
-   *
-   * Phase 6.0: layout 좌표 사용
-   * - node.position 대신 layout[nodeId] 사용
-   *
-   * 책임:
-   * - parentId 기반으로 부모-자식 연결선 렌더링
-   * - 레이아웃 결과 좌표 사용
-   *
-   * @param snapshot - 렌더링할 StateSnapshot
-   * @param layout - 레이아웃 계산 결과 좌표
-   */
-  renderEdges(snapshot, layout) {
+  renderEdges(nodes, edges) {
     const edgeLayer = this.getOrCreateEdgeLayer();
     this.clearLayer(edgeLayer);
-    for (const node of snapshot.nodes) {
-      if (node.parentId !== null) {
-        const parentPosition = layout[node.parentId];
-        const nodePosition = layout[node.id];
-        if (parentPosition && nodePosition) {
-          const line = this.createLine(parentPosition, nodePosition);
-          edgeLayer.appendChild(line);
-        }
-      }
+    const nodePositionMap = /* @__PURE__ */ new Map();
+    for (const node of nodes) {
+      nodePositionMap.set(node.id, node.position);
+    }
+    for (const edge of edges) {
+      const from = nodePositionMap.get(edge.fromNodeId);
+      const to = nodePositionMap.get(edge.toNodeId);
+      if (!from || !to)
+        continue;
+      const line = this.createLine(from, to);
+      edgeLayer.appendChild(line);
     }
   }
-  /**
-   * 노드 렌더링 (Phase 3.4 로직 분리)
-   *
-   * Phase 4.x: 선택 상태 시각화 추가
-   * - snapshot.selectedNodeId 기반으로 선택 노드 강조
-   *
-   * Phase 5: 드래그 이벤트 리스너 추가
-   * - pointerdown 이벤트로 드래그 시작
-   *
-   * Phase 6.0: layout 좌표 사용 + rounded rect 렌더링
-   * - node.position 대신 layout[nodeId] 사용
-   * - circle 대신 rounded rect 사용
-   * - NodeTextLayout으로 텍스트 크기 계산
-   * - 다중 줄 텍스트 지원 (tspan)
-   *
-   * @param snapshot - 렌더링할 StateSnapshot
-   * @param layout - 레이아웃 계산 결과 좌표
-   */
-  renderNodes(snapshot, layout) {
+  renderNodes(nodes) {
     const nodeLayer = this.getOrCreateNodeLayer();
     this.clearLayer(nodeLayer);
-    for (const node of snapshot.nodes) {
-      const nodePosition = layout[node.id];
-      if (!nodePosition) {
-        console.warn(`[renderNodes] SKIP: layout\uC5D0 \uC88C\uD45C \uC5C6\uC74C (nodeId: ${node.id})`);
-        continue;
-      }
-      const isSelected = node.id === snapshot.selectedNodeId;
-      const isDragging = node.id === this.draggingNodeId;
-      const textLayout = computeTextLayout(node.content, 200, {
-        fontSize: 12,
-        fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif"
+    for (const node of nodes) {
+      const textLayout = computeTextLayout(node.content, 240, {
+        fontSize: 14,
+        fontFamily: "system-ui, -apple-system"
       });
-      const padding = 16;
-      const rectWidth = textLayout.width + padding * 2;
-      const rectHeight = textLayout.height + padding * 2;
+      const paddingX = 16;
+      const paddingY = 10;
+      const width = textLayout.width + paddingX * 2;
+      const height = textLayout.height + paddingY * 2;
       const nodeGroup = this.createNodeGroup(
         node.id,
-        nodePosition.x,
-        nodePosition.y
+        node.position.x,
+        node.position.y
       );
-      const rect = this.createRoundedRect(
-        rectWidth,
-        rectHeight,
-        8,
-        isSelected,
-        isDragging
-      );
+      const isSelected = node.id === this.selectedNodeId;
+      const rect = this.createRoundedRect(width, height, isSelected);
       nodeGroup.appendChild(rect);
-      const text = this.createMultilineText(textLayout.lines);
-      nodeGroup.appendChild(text);
-      nodeGroup.style.cursor = "grab";
-      nodeGroup.addEventListener(
-        "pointerdown",
-        (e) => this.handlePointerDown(e, node.id, nodePosition)
-      );
+      const lineHeight = 20;
+      const totalLines = textLayout.lines.length;
+      const yOffset = -((totalLines - 1) * lineHeight) / 2;
+      textLayout.lines.forEach((line, i) => {
+        const text = document.createElementNS(SVG_NS, "text");
+        text.textContent = line;
+        text.setAttribute("x", "0");
+        const lineY = yOffset + i * lineHeight;
+        text.setAttribute("y", String(lineY));
+        text.setAttribute("text-anchor", "middle");
+        text.setAttribute("dominant-baseline", "central");
+        text.setAttribute("font-family", "system-ui, -apple-system");
+        text.setAttribute("font-size", "14");
+        text.setAttribute("fill", "#1C1C1E");
+        text.setAttribute("font-weight", isSelected ? "500" : "400");
+        text.setAttribute("pointer-events", "none");
+        nodeGroup.appendChild(text);
+      });
       nodeLayer.appendChild(nodeGroup);
     }
-    console.log("[renderNodes] \uC644\uB8CC:", {
-      \uB80C\uB354\uB9C1\uB41C_\uB178\uB4DC_\uAC1C\uC218: nodeLayer.children.length,
-      \uC804\uCCB4_\uB178\uB4DC_\uAC1C\uC218: snapshot.nodes.length
-    });
   }
-  /**
-   * Phase 4.0: edge-layer 획득 또는 생성
-   *
-   * edge-layer는 node-layer보다 먼저 추가되어야 함 (뒤에 렌더링)
-   */
   getOrCreateEdgeLayer() {
-    let edgeLayer = this.svgElement.querySelector("#edge-layer");
+    if (!this.svgElement) {
+      return document.createElementNS(SVG_NS, "g");
+    }
+    let edgeLayer = this.svgElement.querySelector(
+      "#edge-layer"
+    );
     if (!edgeLayer) {
       edgeLayer = document.createElementNS(SVG_NS, "g");
       edgeLayer.setAttribute("id", "edge-layer");
@@ -1229,11 +1199,13 @@ var Renderer = class {
     }
     return edgeLayer;
   }
-  /**
-   * node-layer 획득 또는 생성
-   */
   getOrCreateNodeLayer() {
-    let nodeLayer = this.svgElement.querySelector("#node-layer");
+    if (!this.svgElement) {
+      return document.createElementNS(SVG_NS, "g");
+    }
+    let nodeLayer = this.svgElement.querySelector(
+      "#node-layer"
+    );
     if (!nodeLayer) {
       nodeLayer = document.createElementNS(SVG_NS, "g");
       nodeLayer.setAttribute("id", "node-layer");
@@ -1246,19 +1218,11 @@ var Renderer = class {
     }
     return nodeLayer;
   }
-  /**
-   * 레이어 내용 제거
-   */
   clearLayer(layer) {
     while (layer.firstChild) {
       layer.removeChild(layer.firstChild);
     }
   }
-  /**
-   * Phase 4.0: 직선(line) 생성
-   *
-   * 스타일: 하드코딩 (Phase 4.0 임시)
-   */
   createLine(from, to) {
     const line = document.createElementNS(SVG_NS, "line");
     line.setAttribute("x1", String(from.x));
@@ -1269,24 +1233,7 @@ var Renderer = class {
     line.setAttribute("stroke-width", "2");
     return line;
   }
-  /**
-   * 노드 그룹 생성
-   *
-   * 책임:
-   * - CenterRootLayout 결과 좌표를 SVG transform으로 변환
-   * - viewBox 기준 좌표계 사용 (transform-layer의 identity transform 기준)
-   *
-   * 검증:
-   * - CenterRootLayout이 계산한 viewport 중앙 좌표가 그대로 적용됨
-   * - transform-layer가 identity이므로 추가 변환 없음
-   */
   createNodeGroup(id, x, y) {
-    console.log("[createNodeGroup] \uCD5C\uC885 \uC88C\uD45C \uC801\uC6A9:", {
-      nodeId: id,
-      x,
-      y,
-      transform: `translate(${x}, ${y})`
-    });
     const group = document.createElementNS(SVG_NS, "g");
     group.setAttribute("id", `node-${id}`);
     group.setAttribute("transform", `translate(${x}, ${y})`);
@@ -1294,160 +1241,34 @@ var Renderer = class {
     return group;
   }
   /**
-   * Phase 6.0: Rounded rect 생성 (circle 대체)
-   *
-   * 책임:
-   * - 텍스트 콘텐츠를 감싸는 rounded rectangle 생성
-   * - 선택/드래그 상태에 따른 시각적 피드백
-   *
-   * @param width - rect 너비
-   * @param height - rect 높이
-   * @param radius - 모서리 둥글기
-   * @param isSelected - 선택 상태
-   * @param isDragging - 드래그 상태
-   * @returns SVGRectElement
+   * Create Apple-style rounded rectangle node
+   * Per UITokens.md and NodeSelectionVisualSpec.md
    */
-  createRoundedRect(width, height, radius = 8, isSelected = false, isDragging = false) {
+  createRoundedRect(width, height, isSelected = false) {
     const rect = document.createElementNS(SVG_NS, "rect");
     rect.setAttribute("x", String(-width / 2));
     rect.setAttribute("y", String(-height / 2));
     rect.setAttribute("width", String(width));
     rect.setAttribute("height", String(height));
-    rect.setAttribute("rx", String(radius));
-    rect.setAttribute("ry", String(radius));
-    rect.setAttribute("fill", "rgba(255, 255, 255, 0.9)");
+    rect.setAttribute("rx", "10");
+    rect.setAttribute("ry", "10");
+    rect.setAttribute("fill", "#FFFFFF");
+    rect.setAttribute("filter", "url(#node-shadow)");
     if (isSelected) {
-      rect.setAttribute("stroke", "rgba(0, 122, 255, 1)");
-      rect.setAttribute("stroke-width", "3");
+      rect.setAttribute("stroke", "#0A84FF");
+      rect.setAttribute("stroke-width", "2");
     } else {
-      rect.setAttribute("stroke", "rgba(0, 0, 0, 0.15)");
+      rect.setAttribute("stroke", "#D0D0D0");
       rect.setAttribute("stroke-width", "1");
-    }
-    if (isDragging) {
-      rect.setAttribute("opacity", "0.85");
     }
     return rect;
   }
   /**
-   * 텍스트 생성 (단일 줄)
-   *
-   * 스타일: 하드코딩 (Phase 4.0 임시)
-   *
-   * @deprecated Phase 6.0부터 createMultilineText() 사용 권장
+   * Set selected node ID for visualization
+   * Called by NeroMindView when selection changes
    */
-  createText(content) {
-    const text = document.createElementNS(SVG_NS, "text");
-    text.setAttribute("x", "0");
-    text.setAttribute("y", "0");
-    text.setAttribute("text-anchor", "middle");
-    text.setAttribute("dominant-baseline", "middle");
-    text.setAttribute(
-      "font-family",
-      "-apple-system, BlinkMacSystemFont, sans-serif"
-    );
-    text.setAttribute("font-size", "12");
-    text.setAttribute("fill", "#1d1d1f");
-    text.textContent = content;
-    return text;
-  }
-  /**
-   * Phase 6.0: 다중 줄 텍스트 생성 (tspan 기반)
-   *
-   * 책임:
-   * - lines 배열을 tspan 요소로 변환
-   * - 수직/수평 중앙 정렬 유지
-   * - lineHeight 적용
-   *
-   * @param lines - 줄바꿈된 텍스트 배열
-   * @returns SVGTextElement (tspan 포함)
-   */
-  createMultilineText(lines) {
-    const text = document.createElementNS(SVG_NS, "text");
-    text.setAttribute("x", "0");
-    text.setAttribute("y", "0");
-    text.setAttribute("text-anchor", "middle");
-    text.setAttribute(
-      "font-family",
-      "-apple-system, BlinkMacSystemFont, sans-serif"
-    );
-    text.setAttribute("font-size", "12");
-    text.setAttribute("fill", "#1d1d1f");
-    const fontSize = 12;
-    const lineHeight = fontSize * 1.4;
-    const totalHeight = lines.length * lineHeight;
-    const startY = -totalHeight / 2 + lineHeight / 2;
-    for (let i = 0; i < lines.length; i++) {
-      const tspan = document.createElementNS(
-        SVG_NS,
-        "tspan"
-      );
-      tspan.setAttribute("x", "0");
-      tspan.setAttribute("y", String(startY + i * lineHeight));
-      tspan.setAttribute("dominant-baseline", "middle");
-      tspan.textContent = lines[i];
-      text.appendChild(tspan);
-    }
-    return text;
-  }
-  // =========================================================================
-  // Phase 5: Drag 이벤트 핸들러
-  // =========================================================================
-  /**
-   * pointerdown: 드래그 시작 + 노드 선택
-   *
-   * Phase 5.1:
-   * 1. SelectNodeCommand 실행 (노드 선택)
-   * 2. draggingNodeId 설정
-   * 3. dragOffset 계산 (포인터 위치 - 노드 위치)
-   * 4. dragStartPosition 저장 (undo용)
-   * 5. 전역 pointermove/pointerup 리스너 등록
-   * 6. cursor 변경
-   */
-  handlePointerDown(e, nodeId, nodePosition) {
-    var _a;
-    e.stopPropagation();
-    if (this.stateManager) {
-      this.stateManager.selectNode(nodeId);
-    }
-    this.draggingNodeId = nodeId;
-    this.dragStartPosition = { x: nodePosition.x, y: nodePosition.y };
-    const pt = this.svgElement.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
-    const svgP = pt.matrixTransform(
-      (_a = this.svgElement.getScreenCTM()) == null ? void 0 : _a.inverse()
-    );
-    this.dragOffset = {
-      x: svgP.x - nodePosition.x,
-      y: svgP.y - nodePosition.y
-    };
-    document.addEventListener("pointermove", this.handlePointerMove);
-    document.addEventListener("pointerup", this.handlePointerUp);
-    document.body.style.cursor = "grabbing";
-  }
-  /**
-   * 렌더링 시작 (현재 미사용)
-   */
-  start() {
-    console.log("Renderer started");
-  }
-  /**
-   * 렌더링 정지
-   */
-  stop() {
-    if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
-    console.log("Renderer stopped");
-  }
-  /**
-   * Disposable
-   */
-  destroy() {
-    this.stop();
-    document.removeEventListener("pointermove", this.handlePointerMove);
-    document.removeEventListener("pointerup", this.handlePointerUp);
+  setSelectedNodeId(nodeId) {
+    this.selectedNodeId = nodeId;
   }
 };
 
@@ -1492,14 +1313,50 @@ var VIEW_TYPE_NEROMIND = "neromind-view";
 var NeroMindView = class extends import_obsidian.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
-    this.svgElement = null;
+    this.renderer = null;
+    this.rendererType = null;
+    this.renderSurfaceEl = null;
+    // Phase 10: Expanded to Element | null for SVG support
     this.disposables = [];
     this.mindmapContainerEl = null;
     // Phase 3.1: State Management
     this.stateManager = null;
+    // Phase 3.4: Command History
     this.historyManager = null;
+    // Phase 11: Expandable FAB Toolbar
+    this.fabMainEl = null;
+    this.fabMenuEl = null;
+    this.fabUndoBtn = null;
+    this.fabRedoBtn = null;
+    this.isToolbarExpanded = false;
     this.eventBus = null;
-    this.renderer = null;
+    this.unsubscribeSettings = null;
+    this.eventUnsubscribers = [];
+    this.currentSettings = null;
+    this.baseRadius = 160;
+    this.depthGap = 140;
+    this.minAngleGap = 12;
+    this.pendingRender = false;
+    this.suppressRender = false;
+    this.ignoreNextSettingsEvent = false;
+    this.resizeObserver = null;
+    this.currentViewport = {
+      left: 0,
+      top: 0,
+      right: 0,
+      bottom: 0,
+      width: 0,
+      height: 0
+    };
+    this.viewportUnsubscribers = [];
+    this.lastSnapshot = null;
+    this.visibleNodeIds = /* @__PURE__ */ new Set();
+    this.forcedVisibleNodeIds = /* @__PURE__ */ new Set();
+    this.visibleUpdateScheduled = false;
+    this.layoutRequest = null;
+    this.layoutScheduled = false;
+    this.layoutDebounceMs = 140;
+    this.layoutDebounceTimer = null;
     // Phase 3.1: UI Elements
     this.undoButtonEl = null;
     this.plugin = plugin;
@@ -1535,59 +1392,77 @@ var NeroMindView = class extends import_obsidian.ItemView {
     const container = this.containerEl;
     container.empty();
     container.addClass("neromind-view");
-    this.mindmapContainerEl = container.createDiv({ cls: "neromind-container" });
-    this.initializeSVGCanvas();
+    this.mindmapContainerEl = container.createDiv({
+      cls: "neromind-container"
+    });
+    this.ensureOverlay();
+    this.initializeRenderer(this.plugin.settings.rendererType);
     this.initializeStateManagement();
-    this.createUndoButton();
     this.registerShortcuts();
     this.registerCanvasEvents();
-    this.renderWelcomeMessage();
+    this.setupViewportObserver();
+    this.registerViewportEvents();
+    this.applySettings(this.plugin.settings);
+    this.unsubscribeSettings = this.plugin.onSettingsChange((settings) => {
+      if (this.ignoreNextSettingsEvent) {
+        this.ignoreNextSettingsEvent = false;
+        return;
+      }
+      this.applySettings(settings);
+    });
+    this.setupFabToolbar();
+    this.initializeDefaultData();
   }
-  /**
-   * SVG 캔버스 초기화
-   *
-   * Phase 6.1 수정사항:
-   * - overflow: visible 설정 (clip 방지)
-   * - viewBox 제거 (DOM 좌표계와 일치시킴)
-   * - 줌/팬은 transform-layer로 처리
-   *
-   * Phase 1 주의사항:
-   * - SVG_NS 네임스페이스 사용 필수
-   * - 줌/팬 준비 (transform group)
-   */
-  initializeSVGCanvas() {
-    var _a;
-    const SVG_NS2 = "http://www.w3.org/2000/svg";
-    this.svgElement = document.createElementNS(SVG_NS2, "svg");
-    this.svgElement.setAttribute("class", "neromind-canvas");
-    this.svgElement.setAttribute("width", "100%");
-    this.svgElement.setAttribute("height", "100%");
-    this.svgElement.style.overflow = "visible";
-    const bgGroup = document.createElementNS(SVG_NS2, "g");
-    bgGroup.setAttribute("id", "background-layer");
-    this.svgElement.appendChild(bgGroup);
-    const transformGroup = document.createElementNS(SVG_NS2, "g");
-    transformGroup.setAttribute("id", "transform-layer");
-    transformGroup.setAttribute("transform", "translate(0, 0) scale(1)");
-    this.svgElement.appendChild(transformGroup);
-    const edgeGroup = document.createElementNS(SVG_NS2, "g");
-    edgeGroup.setAttribute("id", "edge-layer");
-    transformGroup.appendChild(edgeGroup);
-    const nodeGroup = document.createElementNS(SVG_NS2, "g");
-    nodeGroup.setAttribute("id", "node-layer");
-    transformGroup.appendChild(nodeGroup);
-    if (this.mindmapContainerEl) {
-      const overlayDiv = this.mindmapContainerEl.createDiv({
-        cls: "neromind-overlay"
-      });
-      overlayDiv.style.position = "absolute";
-      overlayDiv.style.top = "0";
-      overlayDiv.style.left = "0";
-      overlayDiv.style.width = "100%";
-      overlayDiv.style.height = "100%";
-      overlayDiv.style.pointerEvents = "none";
+  ensureOverlay() {
+    if (!this.mindmapContainerEl)
+      return;
+    const existing = this.mindmapContainerEl.querySelector(".neromind-overlay");
+    if (existing)
+      return;
+    const overlayDiv = this.mindmapContainerEl.createDiv({
+      cls: "neromind-overlay"
+    });
+    overlayDiv.style.position = "absolute";
+    overlayDiv.style.top = "0";
+    overlayDiv.style.left = "0";
+    overlayDiv.style.width = "100%";
+    overlayDiv.style.height = "100%";
+    overlayDiv.style.pointerEvents = "none";
+  }
+  initializeRenderer(rendererType) {
+    var _a, _b, _c, _d, _e, _f, _g;
+    if (!this.mindmapContainerEl) {
+      console.error("[initializeRenderer] mindmapContainerEl is null!");
+      return;
     }
-    (_a = this.mindmapContainerEl) == null ? void 0 : _a.appendChild(this.svgElement);
+    console.log(
+      `[initializeRenderer] Initializing ${rendererType} renderer...`
+    );
+    this.destroyRenderer();
+    this.rendererType = rendererType;
+    this.renderer = this.createRenderer(rendererType);
+    this.renderer.init(this.mindmapContainerEl);
+    this.renderSurfaceEl = (_c = (_b = (_a = this.renderer).getSurfaceElement) == null ? void 0 : _b.call(_a)) != null ? _c : this.mindmapContainerEl;
+    console.log("[initializeRenderer] Renderer surface element:", {
+      surfaceType: (_d = this.renderSurfaceEl) == null ? void 0 : _d.tagName,
+      isAttached: (_e = this.renderSurfaceEl) == null ? void 0 : _e.isConnected,
+      parentElement: (_g = (_f = this.renderSurfaceEl) == null ? void 0 : _f.parentElement) == null ? void 0 : _g.className
+    });
+    this.updateViewportBounds();
+  }
+  createRenderer(rendererType) {
+    if (rendererType === "canvas") {
+      return new CanvasRenderer();
+    }
+    return new DomRenderer();
+  }
+  destroyRenderer() {
+    if (this.renderer) {
+      this.renderer.destroy();
+      this.renderer = null;
+    }
+    this.renderSurfaceEl = null;
+    this.rendererType = null;
   }
   /**
    * Phase 3.1: State Management 초기화
@@ -1610,29 +1485,113 @@ var NeroMindView = class extends import_obsidian.ItemView {
     this.addDisposable(this.stateManager);
     this.historyManager = new HistoryManager(this.stateManager);
     this.addDisposable(this.historyManager);
-    if (this.svgElement) {
-      this.renderer = new Renderer(this.svgElement);
-      this.renderer.setStateManager(this.stateManager);
-      this.addDisposable(this.renderer);
-    }
+    this.bindStateEvents();
     console.log("State management initialized");
+  }
+  setupViewportObserver() {
+    if (!this.mindmapContainerEl)
+      return;
+    this.resizeObserver = new ResizeObserver(() => {
+      this.updateViewportBounds();
+      this.scheduleVisibleUpdate();
+    });
+    this.resizeObserver.observe(this.mindmapContainerEl);
+    this.updateViewportBounds();
+  }
+  registerViewportEvents() {
+    var _a;
+    for (const unsubscribe of this.viewportUnsubscribers) {
+      unsubscribe();
+    }
+    this.viewportUnsubscribers.length = 0;
+    const target = (_a = this.renderSurfaceEl) != null ? _a : this.mindmapContainerEl;
+    if (!target)
+      return;
+    const handler = () => {
+      this.scheduleVisibleUpdate();
+    };
+    target.addEventListener("wheel", handler, { passive: true });
+    this.viewportUnsubscribers.push(() => {
+      target.removeEventListener("wheel", handler);
+    });
+  }
+  updateViewportBounds() {
+    if (!this.mindmapContainerEl)
+      return;
+    const rect = this.mindmapContainerEl.getBoundingClientRect();
+    const width = rect.width || 800;
+    const height = rect.height || 600;
+    this.currentViewport = {
+      left: 0,
+      top: 0,
+      right: width,
+      bottom: height,
+      width,
+      height
+    };
+  }
+  bindStateEvents() {
+    if (!this.eventBus)
+      return;
+    const unsubscribeNodeUpdated = this.eventBus.on("nodeUpdated", () => {
+      if (this.suppressRender)
+        return;
+      this.scheduleRender();
+    });
+    const unsubscribeLayoutReset = this.eventBus.on(
+      "layoutResetRequested",
+      (payload) => {
+        const data = payload;
+        const rootIds = Array.isArray(data == null ? void 0 : data.rootIds) ? data.rootIds : [];
+        if (rootIds.length === 0) {
+          this.enqueueLayoutRequest({ scope: "all" });
+          return;
+        }
+        this.enqueueLayoutRequest({ scope: "subtree", rootIds });
+      }
+    );
+    this.eventUnsubscribers.push(
+      unsubscribeNodeUpdated,
+      unsubscribeLayoutReset
+    );
+    const unsubscribeLayoutSettingsChanged = this.eventBus.on(
+      "layoutSettingsChanged",
+      (payload) => {
+        var _a, _b;
+        const data = payload;
+        const patch = (_a = data == null ? void 0 : data.settings) != null ? _a : {};
+        const nextSettings = {
+          ...this.plugin.settings,
+          ...patch
+        };
+        this.plugin.settings = nextSettings;
+        this.currentSettings = { ...nextSettings };
+        this.ignoreNextSettingsEvent = true;
+        void this.plugin.saveSettings();
+        const scope = (_b = data == null ? void 0 : data.scope) != null ? _b : "all";
+        if (scope === "subtree" && (data == null ? void 0 : data.rootId)) {
+          this.enqueueLayoutRequest({
+            scope: "subtree",
+            rootIds: [data.rootId]
+          });
+          return;
+        }
+        this.enqueueLayoutRequest({ scope: "all" });
+      }
+    );
+    this.eventUnsubscribers.push(unsubscribeLayoutSettingsChanged);
   }
   /**
    * Phase 3.1: Undo 버튼 생성
    *
    * 책임:
    * - HTML 버튼 요소 생성
-   * - CSS 클래스 적용 (styles.css의 .neromind-undo-button 사용)
+   * - 스타일 적용
    * - 클릭 이벤트 연결
    * - 초기 활성화 상태 설정
    *
    * 비책임:
    * - Undo 로직 실행 (handleUndo 책임)
-   *
-   * z-index 전략:
-   * - Undo 버튼은 overlay 내 배치 (z-index: 20)
-   * - Canvas transform (zoom/pan)에 영향받지 않음
-   * - 노드 렌더링에 가려지지 않음
    */
   createUndoButton() {
     const overlayEl = this.containerEl.querySelector(".neromind-overlay");
@@ -1644,6 +1603,17 @@ var NeroMindView = class extends import_obsidian.ItemView {
       text: "Undo",
       cls: "neromind-undo-button"
     });
+    this.undoButtonEl.style.position = "absolute";
+    this.undoButtonEl.style.bottom = "20px";
+    this.undoButtonEl.style.right = "20px";
+    this.undoButtonEl.style.padding = "8px 16px";
+    this.undoButtonEl.style.border = "1px solid rgba(0, 0, 0, 0.1)";
+    this.undoButtonEl.style.borderRadius = "8px";
+    this.undoButtonEl.style.background = "rgba(255, 255, 255, 0.9)";
+    this.undoButtonEl.style.cursor = "pointer";
+    this.undoButtonEl.style.pointerEvents = "auto";
+    this.undoButtonEl.style.fontSize = "14px";
+    this.undoButtonEl.style.fontFamily = "-apple-system, BlinkMacSystemFont, sans-serif";
     this.undoButtonEl.addEventListener("click", () => this.handleUndo());
     this.updateUndoButton();
   }
@@ -1680,11 +1650,10 @@ var NeroMindView = class extends import_obsidian.ItemView {
    *
    * 책임:
    * - canUndo() 결과에 따라 버튼 활성화/비활성화
-   * - CSS :disabled 선택자가 자동으로 스타일 적용
+   * - 버튼 텍스트 설정
    *
    * 비책임:
    * - Undo 로직 실행
-   * - 스타일 직접 조작 (CSS에 위임)
    */
   updateUndoButton() {
     if (!this.undoButtonEl || !this.historyManager) {
@@ -1692,6 +1661,13 @@ var NeroMindView = class extends import_obsidian.ItemView {
     }
     const canUndo = this.historyManager.canUndo();
     this.undoButtonEl.disabled = !canUndo;
+    if (!canUndo) {
+      this.undoButtonEl.style.opacity = "0.5";
+      this.undoButtonEl.style.cursor = "not-allowed";
+    } else {
+      this.undoButtonEl.style.opacity = "1";
+      this.undoButtonEl.style.cursor = "pointer";
+    }
   }
   /**
    * Phase 3.4: Snapshot 렌더링
@@ -1705,14 +1681,323 @@ var NeroMindView = class extends import_obsidian.ItemView {
    * - StateManager 상태 직접 조작
    */
   renderSnapshot(snapshot) {
-    console.log("Rendering snapshot:", {
+    console.log("[renderSnapshot] Rendering snapshot:", {
       nodeCount: snapshot.nodes.length,
       edgeCount: snapshot.edges.length,
-      rootId: snapshot.rootId
+      rootId: snapshot.rootId,
+      hasRenderer: !!this.renderer,
+      rendererType: this.rendererType
     });
-    if (this.renderer) {
-      this.renderer.render(snapshot);
+    if (!this.renderer) {
+      console.error("[renderSnapshot] Renderer is null! Cannot render.");
+      return;
     }
+    this.lastSnapshot = snapshot;
+    const visibleNodeIds = this.computeVisibleNodeIds(snapshot);
+    console.log("[renderSnapshot] Visible nodes:", {
+      total: snapshot.nodes.length,
+      visible: visibleNodeIds.size,
+      visibleIds: Array.from(visibleNodeIds)
+    });
+    this.applyVisibleNodes(snapshot, visibleNodeIds);
+  }
+  applySettings(settings) {
+    const prev = this.currentSettings;
+    this.currentSettings = { ...settings };
+    if (!prev || prev.rendererType !== settings.rendererType) {
+      this.initializeRenderer(settings.rendererType);
+      this.registerViewportEvents();
+      if (this.lastSnapshot) {
+        this.renderSnapshot(this.lastSnapshot);
+      }
+    }
+    const layoutChanged = !prev || prev.enableRadialLayout !== settings.enableRadialLayout || prev.layoutDirection !== settings.layoutDirection;
+    if (layoutChanged) {
+      this.enqueueLayoutRequest({ scope: "all" });
+    }
+  }
+  enqueueLayoutRequest(request) {
+    if (!this.layoutRequest) {
+      this.layoutRequest = { scope: request.scope, rootIds: /* @__PURE__ */ new Set() };
+    }
+    if (request.scope === "all") {
+      this.layoutRequest.scope = "all";
+      this.layoutRequest.rootIds.clear();
+    } else if (this.layoutRequest.scope !== "all" && request.rootIds) {
+      for (const rootId of request.rootIds) {
+        this.layoutRequest.rootIds.add(rootId);
+      }
+    }
+    this.scheduleLayoutFlush();
+  }
+  scheduleLayoutFlush() {
+    if (this.layoutScheduled)
+      return;
+    this.layoutScheduled = true;
+    const flush = () => {
+      this.layoutScheduled = false;
+      if (!this.layoutRequest)
+        return;
+      const request = this.layoutRequest;
+      this.layoutRequest = null;
+      this.flushLayoutRequest(request);
+    };
+    if (this.layoutDebounceMs > 0) {
+      if (this.layoutDebounceTimer !== null) {
+        window.clearTimeout(this.layoutDebounceTimer);
+      }
+      this.layoutDebounceTimer = window.setTimeout(() => {
+        this.layoutDebounceTimer = null;
+        requestAnimationFrame(flush);
+      }, this.layoutDebounceMs);
+      return;
+    }
+    requestAnimationFrame(flush);
+  }
+  flushLayoutRequest(request) {
+    var _a;
+    const settings = (_a = this.currentSettings) != null ? _a : this.plugin.settings;
+    if (request.scope === "all") {
+      this.recomputeLayout(settings, { scope: "all" });
+      return;
+    }
+    if (request.rootIds.size === 0) {
+      this.recomputeLayout(settings, { scope: "all" });
+      return;
+    }
+    for (const rootId of request.rootIds) {
+      this.recomputeLayout(settings, { scope: "subtree", rootId });
+    }
+  }
+  recomputeLayout(settings, options = { scope: "all" }) {
+    if (!this.stateManager || !this.renderer) {
+      return;
+    }
+    const snapshot = this.stateManager.getSnapshot();
+    if (!settings.enableRadialLayout || snapshot.nodes.length === 0) {
+      this.renderSnapshot(snapshot);
+      return;
+    }
+    const center = this.getViewportCenter();
+    const positions = this.computeRadialPositions(
+      snapshot,
+      center,
+      settings.layoutDirection,
+      options
+    );
+    this.suppressRender = true;
+    try {
+      for (const [nodeId, position] of positions) {
+        this.stateManager.updateNode(nodeId, { position });
+      }
+      const updatedSnapshot = this.stateManager.getSnapshot();
+      this.renderSnapshot(updatedSnapshot);
+    } finally {
+      this.suppressRender = false;
+    }
+  }
+  scheduleRender() {
+    if (this.pendingRender)
+      return;
+    this.pendingRender = true;
+    requestAnimationFrame(() => {
+      this.pendingRender = false;
+      if (!this.stateManager || !this.renderer)
+        return;
+      this.renderSnapshot(this.stateManager.getSnapshot());
+    });
+  }
+  scheduleVisibleUpdate() {
+    if (this.visibleUpdateScheduled)
+      return;
+    this.visibleUpdateScheduled = true;
+    requestAnimationFrame(() => {
+      this.visibleUpdateScheduled = false;
+      if (!this.lastSnapshot)
+        return;
+      const nextVisible = this.computeVisibleNodeIds(this.lastSnapshot);
+      if (!this.isVisibleSetChanged(this.visibleNodeIds, nextVisible)) {
+        return;
+      }
+      this.applyVisibleNodes(this.lastSnapshot, nextVisible);
+    });
+  }
+  applyVisibleNodes(snapshot, visibleNodeIds) {
+    this.visibleNodeIds = visibleNodeIds;
+    if (!this.renderer)
+      return;
+    const visibleNodes = snapshot.nodes.filter((n) => visibleNodeIds.has(n.id));
+    const visibleEdges = snapshot.edges.filter(
+      (e) => visibleNodeIds.has(e.fromNodeId) && visibleNodeIds.has(e.toNodeId)
+    );
+    if (this.renderer && "setSelectedNodeId" in this.renderer) {
+      this.renderer.setSelectedNodeId(snapshot.selectedNodeId || null);
+    }
+    this.renderer.render(visibleNodes, visibleEdges, this.currentViewport);
+  }
+  buildRenderData(snapshot, visibleNodeIds) {
+    const nodes = snapshot.nodes.filter((node) => visibleNodeIds.has(node.id));
+    const edges = snapshot.edges.filter(
+      (edge) => visibleNodeIds.has(edge.fromNodeId) && visibleNodeIds.has(edge.toNodeId)
+    );
+    return { nodes, edges };
+  }
+  computeVisibleNodeIds(snapshot) {
+    const bounds = this.getVisibleBounds();
+    const result = /* @__PURE__ */ new Set();
+    const forcedIds = new Set(this.forcedVisibleNodeIds);
+    if (snapshot.selectedNodeId) {
+      forcedIds.add(snapshot.selectedNodeId);
+    }
+    for (const node of snapshot.nodes) {
+      if (forcedIds.has(node.id)) {
+        result.add(node.id);
+        continue;
+      }
+      if (this.isNodeVisible(node.position, bounds)) {
+        result.add(node.id);
+      }
+    }
+    for (const id of forcedIds) {
+      result.add(id);
+    }
+    return result;
+  }
+  getVisibleBounds() {
+    return { ...this.currentViewport };
+  }
+  isNodeVisible(position, bounds) {
+    const halfWidth = NODE_CONSTANTS.MIN_WIDTH / 2;
+    const halfHeight = NODE_CONSTANTS.HEIGHT / 2;
+    const left = position.x - halfWidth;
+    const right = position.x + halfWidth;
+    const top = position.y - halfHeight;
+    const bottom = position.y + halfHeight;
+    return right >= bounds.left && left <= bounds.right && bottom >= bounds.top && top <= bounds.bottom;
+  }
+  isVisibleSetChanged(previous, next) {
+    if (previous.size !== next.size)
+      return true;
+    for (const id of next) {
+      if (!previous.has(id))
+        return true;
+    }
+    return false;
+  }
+  getViewportCenter() {
+    var _a, _b, _c;
+    const rect = (_a = this.mindmapContainerEl) == null ? void 0 : _a.getBoundingClientRect();
+    const width = (_b = rect == null ? void 0 : rect.width) != null ? _b : 800;
+    const height = (_c = rect == null ? void 0 : rect.height) != null ? _c : 600;
+    return { x: width / 2, y: height / 2 };
+  }
+  computeRadialPositions(snapshot, center, layoutDirection, options) {
+    var _a, _b;
+    const positions = /* @__PURE__ */ new Map();
+    if (snapshot.nodes.length === 0) {
+      return positions;
+    }
+    const nodeById = /* @__PURE__ */ new Map();
+    const childrenByParent = /* @__PURE__ */ new Map();
+    for (const node of snapshot.nodes) {
+      nodeById.set(node.id, node);
+      const list = (_a = childrenByParent.get(node.parentId)) != null ? _a : [];
+      list.push(node);
+      childrenByParent.set(node.parentId, list);
+    }
+    const rootId = options.scope === "subtree" && options.rootId ? options.rootId : snapshot.rootId && nodeById.has(snapshot.rootId) && snapshot.rootId || ((_b = snapshot.nodes.find((node) => node.parentId === null)) == null ? void 0 : _b.id) || snapshot.nodes[0].id;
+    const targetNodes = options.scope === "subtree" && options.rootId ? this.collectSubtreeNodeIds(options.rootId, childrenByParent) : null;
+    const rootNode = nodeById.get(rootId);
+    const rootPosition = (rootNode == null ? void 0 : rootNode.userPosition) ? rootNode.position : center;
+    if (!(rootNode == null ? void 0 : rootNode.userPosition)) {
+      positions.set(rootId, rootPosition);
+    }
+    const angleRange = this.getAngleRange(layoutDirection);
+    this.layoutSubtree(
+      rootId,
+      1,
+      angleRange.start,
+      angleRange.end,
+      rootPosition,
+      positions,
+      childrenByParent,
+      targetNodes
+    );
+    return positions;
+  }
+  layoutSubtree(nodeId, depth, startAngle, endAngle, parentPosition, positions, childrenByParent, targetNodes) {
+    var _a;
+    const children = (_a = childrenByParent.get(nodeId)) != null ? _a : [];
+    if (children.length === 0) {
+      return;
+    }
+    const span = endAngle - startAngle;
+    const step = Math.max(
+      span / Math.max(children.length, 1),
+      this.minAngleGap
+    );
+    let angle = startAngle + step / 2;
+    const radius = this.getRadiusForDepth(depth);
+    for (const child of children) {
+      if (targetNodes && !targetNodes.has(child.id)) {
+        angle += step;
+        continue;
+      }
+      const position = child.userPosition ? child.position : this.calculatePosition(parentPosition, radius, angle);
+      if (!child.userPosition) {
+        positions.set(child.id, position);
+      }
+      this.layoutSubtree(
+        child.id,
+        depth + 1,
+        angle - step / 2,
+        angle + step / 2,
+        position,
+        positions,
+        childrenByParent,
+        targetNodes
+      );
+      angle += step;
+    }
+  }
+  getRadiusForDepth(depth) {
+    return this.baseRadius + (depth - 1) * this.depthGap;
+  }
+  getAngleRange(layoutDirection) {
+    switch (layoutDirection) {
+      case "horizontal":
+        return { start: -90, end: 90 };
+      case "vertical":
+        return { start: 0, end: 180 };
+      case "radial":
+      default:
+        return { start: 0, end: 360 };
+    }
+  }
+  calculatePosition(origin, radius, angle) {
+    const rad = angle * Math.PI / 180;
+    return {
+      x: origin.x + Math.cos(rad) * radius,
+      y: origin.y + Math.sin(rad) * radius
+    };
+  }
+  collectSubtreeNodeIds(rootId, childrenByParent) {
+    var _a;
+    const result = /* @__PURE__ */ new Set();
+    const stack = [rootId];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current)
+        continue;
+      if (result.has(current))
+        continue;
+      result.add(current);
+      const children = (_a = childrenByParent.get(current)) != null ? _a : [];
+      for (const child of children) {
+        stack.push(child.id);
+      }
+    }
+    return result;
   }
   /**
    * Phase 3.1: 단축키 등록
@@ -1744,11 +2029,13 @@ var NeroMindView = class extends import_obsidian.ItemView {
    * - 이벤트 발행 (StateManager 책임)
    */
   registerCanvasEvents() {
-    if (!this.svgElement) {
-      console.warn("SVG element not initialized");
+    var _a;
+    const target = (_a = this.renderSurfaceEl) != null ? _a : this.mindmapContainerEl;
+    if (!target) {
+      console.warn("Render surface not initialized");
       return;
     }
-    this.svgElement.addEventListener("dblclick", (evt) => {
+    target.addEventListener("dblclick", (evt) => {
       if (evt instanceof MouseEvent) {
         this.handleCanvasDoubleClick(evt);
       }
@@ -1768,18 +2055,19 @@ var NeroMindView = class extends import_obsidian.ItemView {
    * - 렌더링 (Renderer 책임)
    */
   handleCanvasDoubleClick(evt) {
-    if (!this.historyManager || !this.svgElement) {
-      console.warn("HistoryManager or SVG element not initialized");
+    if (!this.historyManager || !this.mindmapContainerEl) {
+      console.warn("HistoryManager or render container not initialized");
       return;
     }
-    const rect = this.svgElement.getBoundingClientRect();
+    const rect = this.mindmapContainerEl.getBoundingClientRect();
     const x = evt.clientX - rect.left;
     const y = evt.clientY - rect.top;
-    const nodeId = `node-${Date.now()}`;
+    const nodeId = crypto.randomUUID();
     const newNode = {
       id: nodeId,
       content: "New Node",
       position: { x, y },
+      userPosition: true,
       parentId: null,
       childIds: [],
       direction: null,
@@ -1792,7 +2080,12 @@ var NeroMindView = class extends import_obsidian.ItemView {
     const command = new CreateNodeCommand(newNode);
     try {
       const snapshot = this.historyManager.execute(command);
-      console.log("[handleCanvasDoubleClick] \uB178\uB4DC \uC0DD\uC131 - \uD074\uB9AD \uC704\uCE58:", { x, y, nodeId });
+      console.log("Node created at position:", {
+        x,
+        y,
+        nodeId,
+        canUndo: this.historyManager.canUndo()
+      });
       this.renderSnapshot(snapshot);
       this.updateUndoButton();
     } catch (error) {
@@ -1801,32 +2094,19 @@ var NeroMindView = class extends import_obsidian.ItemView {
   }
   /**
    * Phase 1 환영 메시지
-   *
-   * Phase 6.1 수정:
-   * - viewBox 제거로 인해 getBoundingClientRect() 사용
-   * - Renderer.getViewportSize()와 동일한 로직
-   * - DOM 좌표계 기준 중앙 계산
-   *
-   * 검증:
-   * ✓ DOM 기준 중앙 계산
-   * ✓ Renderer와 동일한 좌표계 사용
    */
   renderWelcomeMessage() {
+    var _a;
     const SVG_NS2 = "http://www.w3.org/2000/svg";
-    if (!this.svgElement)
+    const surface = this.renderSurfaceEl;
+    if (!(surface instanceof SVGSVGElement))
       return;
-    const nodeLayer = this.svgElement.querySelector("#node-layer");
+    const nodeLayer = surface.querySelector("#node-layer");
     if (!nodeLayer)
       return;
-    const boundingRect = this.svgElement.getBoundingClientRect();
-    const centerX = boundingRect.width / 2 || 400;
-    const centerY = boundingRect.height / 2 || 300;
-    console.log("[renderWelcomeMessage] DOM \uAE30\uC900 \uC911\uC559 \uACC4\uC0B0:", {
-      rectWidth: boundingRect.width,
-      rectHeight: boundingRect.height,
-      centerX,
-      centerY
-    });
+    const containerRect = (_a = this.mindmapContainerEl) == null ? void 0 : _a.getBoundingClientRect();
+    const centerX = ((containerRect == null ? void 0 : containerRect.width) || 800) / 2;
+    const centerY = ((containerRect == null ? void 0 : containerRect.height) || 600) / 2;
     const nodeGroup = document.createElementNS(SVG_NS2, "g");
     nodeGroup.setAttribute("transform", `translate(${centerX}, ${centerY})`);
     const rect = document.createElementNS(SVG_NS2, "rect");
@@ -1843,7 +2123,10 @@ var NeroMindView = class extends import_obsidian.ItemView {
     text.setAttribute("x", "0");
     text.setAttribute("y", "5");
     text.setAttribute("text-anchor", "middle");
-    text.setAttribute("font-family", "-apple-system, BlinkMacSystemFont, sans-serif");
+    text.setAttribute(
+      "font-family",
+      "-apple-system, BlinkMacSystemFont, sans-serif"
+    );
     text.setAttribute("font-size", "14");
     text.setAttribute("fill", "#1d1d1f");
     text.textContent = "Welcome to NeroMind";
@@ -1857,7 +2140,7 @@ var NeroMindView = class extends import_obsidian.ItemView {
     feGaussianBlur.setAttribute("stdDeviation", "10");
     filter.appendChild(feGaussianBlur);
     defs.appendChild(filter);
-    this.svgElement.insertBefore(defs, this.svgElement.firstChild);
+    surface.insertBefore(defs, surface.firstChild);
   }
   /**
    * 뷰 닫기
@@ -1878,15 +2161,34 @@ var NeroMindView = class extends import_obsidian.ItemView {
       }
     }
     this.disposables = [];
-    if (this.svgElement) {
-      this.svgElement.remove();
-      this.svgElement = null;
+    this.destroyRenderer();
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
     }
     this.stateManager = null;
     this.historyManager = null;
     this.eventBus = null;
     this.renderer = null;
+    this.rendererType = null;
+    this.renderSurfaceEl = null;
     this.undoButtonEl = null;
+    if (this.unsubscribeSettings) {
+      this.unsubscribeSettings();
+      this.unsubscribeSettings = null;
+    }
+    for (const unsubscribe of this.eventUnsubscribers) {
+      unsubscribe();
+    }
+    this.eventUnsubscribers.length = 0;
+    for (const unsubscribe of this.viewportUnsubscribers) {
+      unsubscribe();
+    }
+    this.viewportUnsubscribers.length = 0;
+    this.currentSettings = null;
+    this.lastSnapshot = null;
+    this.visibleNodeIds.clear();
+    this.forcedVisibleNodeIds.clear();
   }
   /**
    * Disposable 추가
@@ -1894,154 +2196,307 @@ var NeroMindView = class extends import_obsidian.ItemView {
   addDisposable(disposable) {
     this.disposables.push(disposable);
   }
+  /**
+   * Phase 10: Initialize default data
+   *
+   * Per CentralRoot_LeftRightLayout.md: Root node is the "foundation of the map"
+   * and should not be deletable via Undo. We create it directly in state without
+   * going through history.
+   */
+  initializeDefaultData() {
+    if (!this.stateManager || !this.historyManager) {
+      console.error(
+        "[initializeDefaultData] StateManager or HistoryManager not initialized!"
+      );
+      return;
+    }
+    const snapshot = this.stateManager.getSnapshot();
+    console.log("[initializeDefaultData] Current state:", {
+      nodeCount: snapshot.nodes.length,
+      rootId: snapshot.rootId
+    });
+    if (snapshot.nodes.length > 0) {
+      console.log("[initializeDefaultData] Data already exists, rendering...");
+      this.renderSnapshot(snapshot);
+      return;
+    }
+    console.log("[initializeDefaultData] Creating permanent root node...");
+    const center = this.getViewportCenter();
+    const rootNode = {
+      id: "root",
+      // Fixed ID for consistency
+      content: "Central Topic",
+      position: center,
+      userPosition: false,
+      // Allow auto-layout
+      parentId: null,
+      childIds: [],
+      direction: null,
+      isPinned: false,
+      isCollapsed: false,
+      linkedNotePath: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    try {
+      console.log(
+        "[initializeDefaultData] Creating root node (bypassing history)..."
+      );
+      this.stateManager.addNode(rootNode);
+      const newSnapshot = this.stateManager.getSnapshot();
+      console.log("[initializeDefaultData] Root node created:", {
+        nodeCount: newSnapshot.nodes.length,
+        rootId: newSnapshot.rootId,
+        rootPosition: rootNode.position,
+        canUndo: this.historyManager.canUndo()
+        // Should be false
+      });
+      this.renderSnapshot(newSnapshot);
+      this.updateUndoButton();
+      console.log(
+        "[initializeDefaultData] Initialization complete! Root is permanent."
+      );
+    } catch (error) {
+      console.error("[initializeDefaultData] Failed to initialize:", error);
+    }
+  }
+  /**
+   * Phase 11: Setup FAB Toolbar
+   * Author: Nero-kk (https://github.com/Nero-kk)
+   * Blog: http://nero-k.tistory.com
+   */
+  setupFabToolbar() {
+    console.log("\u{1F680} Attempting to render FAB Toolbar...");
+    if (!this.containerEl) {
+      console.error("\u274C FAB Toolbar: containerEl is null!");
+      return;
+    }
+    this.fabMainEl = this.containerEl.createDiv({ cls: "neromind-fab-main" });
+    this.fabMainEl.style.position = "fixed";
+    this.fabMainEl.style.top = "16px";
+    this.fabMainEl.style.left = "16px";
+    this.fabMainEl.style.width = "36px";
+    this.fabMainEl.style.height = "36px";
+    this.fabMainEl.style.zIndex = "99999";
+    this.fabMainEl.style.display = "flex";
+    this.fabMainEl.style.alignItems = "center";
+    this.fabMainEl.style.justifyContent = "center";
+    this.fabMainEl.style.borderRadius = "8px";
+    this.fabMainEl.style.background = "rgba(255, 255, 255, 0.95)";
+    this.fabMainEl.style.border = "1px solid rgba(0, 0, 0, 0.08)";
+    this.fabMainEl.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.12)";
+    this.fabMainEl.style.cursor = "pointer";
+    this.fabMainEl.innerHTML = `
+      <svg class="neromind-fab-main-icon" viewBox="0 0 24 24" style="width: 20px; height: 20px;">
+        <path d="M3 12h18M3 6h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    `;
+    this.fabMenuEl = this.containerEl.createDiv({ cls: "neromind-fab-menu" });
+    this.fabMenuEl.style.position = "fixed";
+    this.fabMenuEl.style.top = "116px";
+    this.fabMenuEl.style.left = "20px";
+    this.fabMenuEl.style.zIndex = "99998";
+    this.fabMenuEl.style.display = "flex";
+    this.fabMenuEl.style.flexDirection = "column";
+    this.fabMenuEl.style.gap = "4px";
+    this.fabMenuEl.style.borderRadius = "12px";
+    this.fabMenuEl.style.padding = "8px";
+    this.fabMenuEl.style.background = "rgba(30, 30, 30, 0.92)";
+    this.fabMenuEl.style.opacity = "0";
+    this.fabMenuEl.style.pointerEvents = "none";
+    this.fabMenuEl.style.transition = "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)";
+    this.fabUndoBtn = this.fabMenuEl.createDiv({
+      cls: "neromind-fab-item disabled"
+    });
+    this.fabUndoBtn.style.width = "40px";
+    this.fabUndoBtn.style.height = "40px";
+    this.fabUndoBtn.style.display = "flex";
+    this.fabUndoBtn.style.alignItems = "center";
+    this.fabUndoBtn.style.justifyContent = "center";
+    this.fabUndoBtn.style.cursor = "pointer";
+    this.fabUndoBtn.style.borderRadius = "8px";
+    this.fabUndoBtn.innerHTML = `
+      <svg class="neromind-fab-item-icon" viewBox="0 0 24 24" style="width: 20px; height: 20px; stroke: white;">
+        <path d="M3 7v6h6M3 13a9 9 0 1 0 2-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    `;
+    this.fabRedoBtn = this.fabMenuEl.createDiv({
+      cls: "neromind-fab-item disabled"
+    });
+    this.fabRedoBtn.style.width = "40px";
+    this.fabRedoBtn.style.height = "40px";
+    this.fabRedoBtn.style.display = "flex";
+    this.fabRedoBtn.style.alignItems = "center";
+    this.fabRedoBtn.style.justifyContent = "center";
+    this.fabRedoBtn.style.cursor = "pointer";
+    this.fabRedoBtn.style.borderRadius = "8px";
+    this.fabRedoBtn.innerHTML = `
+      <svg class="neromind-fab-item-icon" viewBox="0 0 24 24" style="width: 20px; height: 20px; stroke: white;">
+        <path d="M21 7v6h-6M21 13a9 9 0 1 1-2-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    `;
+    this.fabMainEl.addEventListener("click", () => this.toggleFabMenu());
+    this.fabUndoBtn.addEventListener("click", () => this.handleFabUndo());
+    this.fabRedoBtn.addEventListener("click", () => this.handleFabRedo());
+    console.log("\u2705 FAB Toolbar created successfully!", {
+      mainButton: this.fabMainEl,
+      menu: this.fabMenuEl,
+      undoBtn: this.fabUndoBtn,
+      redoBtn: this.fabRedoBtn
+    });
+  }
+  toggleFabMenu() {
+    this.isToolbarExpanded = !this.isToolbarExpanded;
+    if (this.isToolbarExpanded) {
+      this.fabMainEl.style.width = "240px";
+      console.log("[FAB] Expanded");
+    } else {
+      this.fabMainEl.style.width = "40px";
+      console.log("[FAB] Collapsed");
+    }
+  }
+  handleFabUndo() {
+    var _a;
+    if (!((_a = this.historyManager) == null ? void 0 : _a.canUndo()))
+      return;
+    try {
+      const snapshot = this.historyManager.undo();
+      this.renderSnapshot(snapshot);
+      this.updateFabButtons();
+    } catch (error) {
+      console.error("[FAB] Undo failed:", error);
+    }
+  }
+  handleFabRedo() {
+    console.log("[FAB] Redo not yet implemented");
+  }
+  updateFabButtons() {
+    var _a, _b, _c;
+    if (!this.historyManager)
+      return;
+    if (this.historyManager.canUndo()) {
+      (_a = this.fabUndoBtn) == null ? void 0 : _a.removeClass("disabled");
+    } else {
+      (_b = this.fabUndoBtn) == null ? void 0 : _b.addClass("disabled");
+    }
+    (_c = this.fabRedoBtn) == null ? void 0 : _c.addClass("disabled");
+  }
 };
 
-// src/ui/NeroMindSettingTab.ts
+// src/settings/NeroMindSettingTab.ts
 var import_obsidian2 = require("obsidian");
+var DEFAULT_SETTINGS = {
+  enableRadialLayout: true,
+  enableArchive: true,
+  layoutDirection: "radial",
+  rendererType: "dom"
+};
 var NeroMindSettingTab = class extends import_obsidian2.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
+  get settings() {
+    return this.plugin.settings;
+  }
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "NeroMind Settings" });
-    containerEl.createEl("p", {
-      text: "Settings will be available in Phase 4."
+    this.addToggleSetting(
+      "\uBC29\uC0AC\uD615 \uB808\uC774\uC544\uC6C3 \uC790\uB3D9 \uC801\uC6A9",
+      this.settings.enableRadialLayout,
+      async (value) => {
+        this.settings.enableRadialLayout = value;
+        await this.plugin.saveSettings();
+      }
+    );
+    this.addToggleSetting(
+      "\uB178\uB4DC \uC0AD\uC81C \uC2DC Archive \uC0AC\uC6A9",
+      this.settings.enableArchive,
+      async (value) => {
+        this.settings.enableArchive = value;
+        await this.plugin.saveSettings();
+      }
+    );
+    this.addDropdownSetting(
+      "\uAE30\uBCF8 \uB808\uC774\uC544\uC6C3 \uBC29\uD5A5",
+      {
+        horizontal: "horizontal",
+        vertical: "vertical",
+        radial: "radial"
+      },
+      this.settings.layoutDirection,
+      async (value) => {
+        this.settings.layoutDirection = value;
+        await this.plugin.saveSettings();
+      }
+    );
+    this.addDropdownSetting(
+      "\uB80C\uB354\uB7EC \uD0C0\uC785",
+      {
+        dom: "dom",
+        canvas: "canvas"
+      },
+      this.settings.rendererType,
+      async (value) => {
+        this.settings.rendererType = value;
+        await this.plugin.saveSettings();
+      }
+    );
+  }
+  addToggleSetting(name, value, onChange) {
+    new import_obsidian2.Setting(this.containerEl).setName(name).addToggle((toggle) => {
+      toggle.setValue(value).onChange(onChange);
     });
   }
-  /**
-   * Phase 4: 뷰포트 설정
-   */
-  addViewportSettings(containerEl) {
-    containerEl.createEl("h3", { text: "Viewport" });
-    new import_obsidian2.Setting(containerEl).setName("Center on node create").setDesc("Move viewport to center when creating a new node").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.centerOnNodeCreate).onChange(async (value) => {
-        this.plugin.settings.centerOnNodeCreate = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Auto align").setDesc("Automatically align nodes to avoid overlapping").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.autoAlign).onChange(async (value) => {
-        this.plugin.settings.autoAlign = value;
-        await this.plugin.saveSettings();
-      })
-    );
-  }
-  /**
-   * Phase 4: 미니맵 설정
-   */
-  addMinimapSettings(containerEl) {
-    containerEl.createEl("h3", { text: "Minimap" });
-    new import_obsidian2.Setting(containerEl).setName("Show minimap").setDesc("Display minimap in bottom-right corner").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.minimap.enabled).onChange(async (value) => {
-        this.plugin.settings.minimap.enabled = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Minimap size").addDropdown(
-      (dropdown) => dropdown.addOption("small", "Small").addOption("medium", "Medium").addOption("large", "Large").setValue(this.plugin.settings.minimap.size).onChange(async (value) => {
-        this.plugin.settings.minimap.size = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian2.Setting(containerEl).setName("Minimap opacity").addSlider(
-      (slider) => slider.setLimits(0.3, 1, 0.1).setValue(this.plugin.settings.minimap.opacity).setDynamicTooltip().onChange(async (value) => {
-        this.plugin.settings.minimap.opacity = value;
-        await this.plugin.saveSettings();
-      })
-    );
-  }
-  /**
-   * Phase 4: 테마 설정
-   */
-  addThemeSettings(containerEl) {
-    containerEl.createEl("h3", { text: "Theme" });
-    new import_obsidian2.Setting(containerEl).setName("Theme").setDesc("Choose mindmap theme").addDropdown(
-      (dropdown) => dropdown.addOption("light", "Light Mode").addOption("dark", "Dark Mode").addOption("system", "System").setValue(this.plugin.settings.theme).onChange(async (value) => {
-        this.plugin.settings.theme = value;
-        await this.plugin.saveSettings();
-      })
-    );
+  addDropdownSetting(name, options, value, onChange) {
+    new import_obsidian2.Setting(this.containerEl).setName(name).addDropdown((dropdown) => {
+      dropdown.addOptions(options).setValue(value).onChange(onChange);
+    });
   }
 };
 
 // src/main.ts
+var SETTINGS_CHANGED_EVENT = "settingsChanged";
 var NeroMindPlugin = class extends import_obsidian3.Plugin {
   constructor() {
     super(...arguments);
+    this.settings = DEFAULT_SETTINGS;
     this.disposables = [];
+    this.settingsBus = new EventBus();
   }
   /**
    * 플러그인 로드
-   *
-   * 실행 순서:
-   * 1. 설정 로드 (비동기)
-   * 2. 뷰 타입 등록
-   * 3. 리본 아이콘 추가
-   * 4. 설정 탭 등록
-   * 5. workspace onLayoutReady 대기 후 초기화
    */
   async onload() {
-    console.log("Loading KK-NeroMind plugin...");
+    console.log("Loading KK-NeroMind Plugin");
     await this.loadSettings();
     this.registerView(
       VIEW_TYPE_NEROMIND,
       (leaf) => new NeroMindView(leaf, this)
     );
-    const ribbonIconEl = this.addRibbonIcon(
-      "brain",
-      "Open NeroMind",
-      (evt) => {
-        this.activateView();
-      }
-    );
-    ribbonIconEl.addClass("neromind-ribbon-icon");
     this.addSettingTab(new NeroMindSettingTab(this.app, this));
+    this.addRibbonIcon("brain", "Open NeroMind", () => {
+      this.activateView();
+    });
     this.addCommand({
-      id: "open-neromind",
+      id: "open-neromind-view",
       name: "Open NeroMind View",
       callback: () => {
         this.activateView();
       }
     });
     this.app.workspace.onLayoutReady(() => {
-      this.initializePlugin();
+      console.log("NeroMind: Layout ready");
     });
   }
   /**
-   * 플러그인 초기화
-   *
-   * onLayoutReady 콜백 내에서 실행되어야 함
-   * DOM이 완전히 준비된 상태를 보장
-   */
-  initializePlugin() {
-    console.log("Initializing KK-NeroMind plugin...");
-  }
-  /**
    * 플러그인 언로드
-   *
-   * Phase 1 주의사항: 역순으로 destroy 호출
-   *
-   * 향후 destroy 순서 (Phase 2+):
-   * 1. Input Layer (InputManager, GlobalShortcutInterceptor)
-   * 2. Sync Layer (SyncManager, IntegrityChecker)
-   * 3. State Layer (StateManager, CommandHistory)
-   * 4. Renderer Layer (Renderer, MiniMapRenderer)
-   *
-   * 이유: 상위 이벤트 소스부터 차단하여
-   *       하위 모듈에 이벤트가 유입되지 않도록 함
    */
   async onunload() {
-    console.log("Unloading KK-NeroMind plugin...");
-    const disposablesToDestroy = [...this.disposables].reverse();
-    for (const disposable of disposablesToDestroy) {
-      try {
-        disposable.destroy();
-      } catch (error) {
-        console.error("Error destroying disposable:", error);
-      }
+    console.log("Unloading KK-NeroMind Plugin");
+    for (const disposable of this.disposables.reverse()) {
+      disposable.destroy();
     }
     this.disposables = [];
     this.app.workspace.detachLeavesOfType(VIEW_TYPE_NEROMIND);
@@ -2050,37 +2505,48 @@ var NeroMindPlugin = class extends import_obsidian3.Plugin {
    * 설정 로드
    */
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const data = await this.loadData();
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, data != null ? data : {});
   }
   /**
    * 설정 저장
    */
   async saveSettings() {
     await this.saveData(this.settings);
+    this.settingsBus.emit(SETTINGS_CHANGED_EVENT, { settings: this.settings });
+  }
+  onSettingsChange(handler) {
+    return this.settingsBus.on(SETTINGS_CHANGED_EVENT, (payload) => {
+      const data = payload;
+      handler(data.settings);
+    });
   }
   /**
-   * NeroMind 뷰 활성화
-   *
-   * 우측 사이드바에 뷰가 없으면 생성
-   * 이미 있으면 해당 뷰로 전환
+   * MindMapView 활성화
    */
   async activateView() {
     const { workspace } = this.app;
-    let leaf = null;
-    const leaves = workspace.getLeavesOfType(VIEW_TYPE_NEROMIND);
-    if (leaves.length > 0) {
-      leaf = leaves[0];
-    } else {
-      leaf = workspace.getRightLeaf(false);
-      if (leaf) {
-        await leaf.setViewState({
+    let leaf = workspace.getLeavesOfType(VIEW_TYPE_NEROMIND)[0];
+    if (!leaf) {
+      const rightLeaf = workspace.getRightLeaf(false);
+      if (rightLeaf) {
+        await rightLeaf.setViewState({
           type: VIEW_TYPE_NEROMIND,
           active: true
         });
+        leaf = rightLeaf;
       }
     }
     if (leaf) {
       workspace.revealLeaf(leaf);
     }
+  }
+  /**
+   * Disposable 등록
+   * 
+   * @param disposable - 정리가 필요한 객체
+   */
+  registerDisposable(disposable) {
+    this.disposables.push(disposable);
   }
 };

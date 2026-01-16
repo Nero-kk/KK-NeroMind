@@ -1,68 +1,118 @@
 # KK-NeroMind
 
-Apple-Style Clean & Simple Mindmap for Obsidian
+**Apple-Style Intelligent Mindmap for Obsidian**
+_Based on Architecture v4.2.3_
 
-## Phase 1: Core Infrastructure ✅
+## 🚀 Current Status: Phase 10 Complete
 
-### Completed Files
+**Stable Build (v0.1.0) - TypeScript Type System Fixed**
 
-```
-KK-NeroMind/
-├── src/
-│   ├── main.ts                     ✅ Plugin entry point
-│   ├── types/
-│   │   └── index.ts               ✅ Type definitions
-│   ├── views/
-│   │   └── NeroMindView.ts        ✅ Mindmap view
-│   ├── state/
-│   │   └── StateManager.ts        ✅ State management
-│   ├── rendering/
-│   │   ├── Renderer.ts            ✅ Renderer orchestrator
-│   │   ├── SVGNodeFactory.ts      ✅ Node factory
-│   │   └── SVGEdgeFactory.ts      ✅ Edge factory
-│   └── ui/
-│       └── NeroMindSettingTab.ts  ✅ Settings tab
-├── styles/
-│   └── styles.css                  ✅ Apple Style CSS
-├── .gitignore                      ✅ Git ignore rules
-├── .npmrc                          ✅ NPM configuration
-├── manifest.json                   ✅ Plugin metadata
-├── package.json                    ✅ Dependencies
-├── tsconfig.json                   ✅ TypeScript config
-├── esbuild.config.mjs             ✅ Build config
-└── versions.json                   ✅ Version compatibility
+This project has reached a major milestone with the completion of **Phase 10 (Visual Integration & Multi-Window Stability)**. All core infrastructure including rendering, state management, File-Node synchronization, and the settings system is now fully operational.
+
+---
+
+## 🛠️ Critical Technical Fixes (TS2322 & TS2740)
+
+We have permanently resolved the persistent type mismatch errors in the renderer chain by enforcing a consistent interface across the entire system.
+
+### 1. MindMapRenderer Interface (`src/rendering/MindMapRenderer.ts`)
+
+The return type of `getSurfaceElement` was expanded to support both HTML and SVG backends.
+
+```typescript
+// BEFORE: Invalid for SVG backends
+getSurfaceElement?(): HTMLElement | null;
+
+// AFTER: Supports SVGSVGElement (SVG) and HTMLCanvasElement (Canvas)
+getSurfaceElement?(): Element | null;
 ```
 
-### Phase 1 Precautions ✅
+### 2. DomRenderer Implementation (`src/rendering/DomRenderer.ts`)
 
-All 10 precautions from Coding Guidelines strictly followed:
+Updated the implementation to return `SVGSVGElement` correctly.
 
-1. ✅ **onLayoutReady usage** - DOM operations only after workspace ready
-2. ✅ **Disposable reverse cleanup** - Resources cleaned in reverse order
-3. ✅ **async/await** - onload() is async, settings loaded first
-4. ✅ **SVG namespace** - All SVG elements use createElementNS
-5. ✅ **innerHTML avoided** - DOM API used directly
-6. ✅ **Coordinate systems** - Screen/Canvas/World properly distinguished
-7. ✅ **Event listener cleanup** - All listeners removed in destroy()
-8. ✅ **Glassmorphism compatibility** - foreignObject for backdrop-filter
-9. ✅ **Loading order** - Settings → onLayoutReady → init
-10. ✅ **Reverse destroy pattern** - Input → Sync → State → Renderer
+```typescript
+// Implements MindMapRenderer interface
+getSurfaceElement(): Element | null {
+    return this.svgElement; // Returns SVGSVGElement
+}
+```
 
-### Build and Run
+### 3. NeroMindView Integration (`src/views/NeroMindView.ts`)
+
+Relaxed the property type to accept the generic `Element` type, resolving the assignment error.
+
+```typescript
+// Phase 10 Fix: Relaxed type from HTMLElement to Element
+private renderSurfaceEl: Element | null = null;
+
+// Assignment now works perfectly via type inference
+this.renderSurfaceEl = this.renderer.getSurfaceElement?.() ?? this.mindmapContainerEl;
+```
+
+---
+
+## ✨ Key Features (Phase 9 & 10)
+
+### 1. Visual Customization System
+
+- **Real-time Style Updates**: Change colors, blur strength, and line thickness instantly without reloading.
+- **Glassmorphism Engine**: Configurable `backdrop-filter` blur (0-20px).
+- **Edge Rendering**: Switch between Bezier curves and Straight lines.
+
+### 2. Advanced Conflict Management
+
+- **Timestamp Tracking**: Tracks `lastSyncTime` for every node to detect external file modifications.
+- **Conflict Guard**: Prevents overwriting local changes if the external file has been modified more recently.
+- **Conflict UI**: Emits `CONFLICT_DETECTED` events to trigger warning icons (Phase 9).
+
+### 3. Multi-Window Stability
+
+- **DPI Awareness**: Automatically detects window movement between monitors (e.g., Retina to Standard display).
+- **Resize Observer**: Re-renders coordinates instantly when the view container resizes or zooms.
+- **Independent Camera**: Each view maintains its own camera state (pan/zoom level).
+
+---
+
+## 🗺️ Roadmap & Progress
+
+### ✅ Completed
+
+- **Phase 1**: Core Infrastructure & EventBus
+- **Phase 2**: Node Operations (CRUD)
+- **Phase 3**: History Manager (Undo/Redo)
+- **Phase 4**: Bidirectional File Sync (Node ↔ MD File)
+- **Phase 5**: Content Body Sync
+- **Phase 8**: Keyboard Navigation & Search
+- **Phase 9**: Persistent Settings & Conflict Logic
+- **Phase 10**: Visual Integration & Stability
+
+### 🔄 In Progress / Next Steps
+
+- **Drag & Drop Support**: Implement physical node dragging in `InteractionManager` (Phase 7).
+- **Canvas Rendering Backend**: Complete the HTML5 Canvas renderer for high-performance mode.
+- **Performance Optimization**: Virtual scrolling for large maps (>1000 nodes).
+
+---
+
+## 🏗️ Architecture
+
+Adheres strictly to **KK-NeroMind Architecture v4.2.3**:
+
+- **Unidirectional Data Flow**: Action → Command → State → Event → Renderer.
+- **Disposable Pattern**: Strict cleanup of all observers and listeners on view close.
+- **Type Safety**: Full TypeScript strict mode compliance.
+
+### How to Build
 
 ```bash
-# Install dependencies
 npm install
-
-# Development mode (watch)
-npm run dev
-
-# Production build
 npm run build
 ```
 
-### Enable Plugin in Obsidian
+---
 
+<<<<<<< HEAD
 1. Open Obsidian Settings
 2. Go to Community Plugins
 3. Click "Reload" button
@@ -649,3 +699,8 @@ Nero-kk
 ### License
 
 MIT
+=======
+**Author**: Nero-kk
+**Repository**: [GitHub](https://github.com/Nero-kk)
+**Blog**: [Nero's Tech Blog](http://nero-k.tistory.com)
+>>>>>>> 716aaf29f214722774332272c3eb53176c7e4546

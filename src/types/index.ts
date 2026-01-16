@@ -70,6 +70,7 @@ export interface MindMapNode {
 	id: NodeId; // UUID
 	content: string; // 노드 텍스트 또는 노트 링크 (예: [[김진원]])
 	position: Position;
+	userPosition: boolean; // 사용자 수동 배치 여부 (true면 레이아웃 엔진 무시)
 
 	// 계층 구조
 	parentId: NodeId | null; // 루트노드는 null

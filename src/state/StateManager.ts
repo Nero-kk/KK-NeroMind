@@ -356,6 +356,7 @@ export class StateManager implements Disposable {
 		return {
 			persistent: this.persistentState,
 			ephemeral: this.ephemeralState,
+			emit: this.emitSafe.bind(this),
 		};
 	}
 
