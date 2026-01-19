@@ -7,9 +7,6 @@ var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -24,2529 +21,496 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/history/SelectNodeCommand.ts
-var SelectNodeCommand_exports = {};
-__export(SelectNodeCommand_exports, {
-  SelectNodeCommand: () => SelectNodeCommand
-});
-var SelectNodeCommand;
-var init_SelectNodeCommand = __esm({
-  "src/history/SelectNodeCommand.ts"() {
-    SelectNodeCommand = class {
-      constructor(newNodeId) {
-        this.newNodeId = newNodeId;
-        this.description = "Select node";
-        this.previousNodeId = null;
-        this.isFirstExecution = true;
-      }
-      /**
-       * execute: 노드 선택 상태 변경
-       *
-       * Phase 5.1:
-       * - persistentState.ui.selectedNodeId 변경 (Undo 대상)
-       * - lastSelectedNodeId는 ephemeral에 유지 (Undo 비대상)
-       */
-      execute(context) {
-        if (this.isFirstExecution) {
-          this.previousNodeId = context.persistent.ui.selectedNodeId;
-          this.isFirstExecution = false;
-        }
-        if (context.persistent.ui.selectedNodeId !== null) {
-          context.ephemeral.lastSelectedNodeId = context.persistent.ui.selectedNodeId;
-        }
-        context.persistent.ui.selectedNodeId = this.newNodeId;
-      }
-      /**
-       * undo: 이전 선택 상태로 복원
-       *
-       * Phase 5.1:
-       * - persistentState.ui.selectedNodeId를 previousNodeId로 복원
-       */
-      undo(context) {
-        context.persistent.ui.selectedNodeId = this.previousNodeId;
-      }
-    };
-  }
-});
-
-// src/history/MoveNodeCommand.ts
-var MoveNodeCommand_exports = {};
-__export(MoveNodeCommand_exports, {
-  MoveNodeCommand: () => MoveNodeCommand
-});
-var MoveNodeCommand;
-var init_MoveNodeCommand = __esm({
-  "src/history/MoveNodeCommand.ts"() {
-    MoveNodeCommand = class {
-      constructor(nodeId, nextPosition) {
-        this.description = "Move node";
-        this.prevPosition = null;
-        this.prevUserPosition = null;
-        this.lastAppliedAt = 0;
-        this.createdAt = Date.now();
-        this.nodeId = nodeId;
-        this.nextPosition = { ...nextPosition };
-      }
-      execute(context) {
-        var _a;
-        const node = context.persistent.graph.nodes.get(this.nodeId);
-        if (!node)
-          return;
-        if (!this.prevPosition) {
-          this.prevPosition = { ...node.position };
-        }
-        if (this.prevUserPosition === null) {
-          this.prevUserPosition = node.userPosition;
-        }
-        node.position = { ...this.nextPosition };
-        node.userPosition = true;
-        node.updatedAt = Date.now();
-        this.lastAppliedAt = node.updatedAt;
-        (_a = context.emit) == null ? void 0 : _a.call(context, "nodeUpdated", { node });
-      }
-      undo(context) {
-        var _a;
-        const node = context.persistent.graph.nodes.get(this.nodeId);
-        if (!node || !this.prevPosition || this.prevUserPosition === null)
-          return;
-        node.position = { ...this.prevPosition };
-        node.userPosition = this.prevUserPosition;
-        node.updatedAt = Date.now();
-        (_a = context.emit) == null ? void 0 : _a.call(context, "nodeUpdated", { node });
-      }
-      getNodeId() {
-        return this.nodeId;
-      }
-      getLastAppliedAt() {
-        return this.lastAppliedAt;
-      }
-      updateNextPosition(nextPosition) {
-        this.nextPosition = { ...nextPosition };
-      }
-      getNextPosition() {
-        return { ...this.nextPosition };
-      }
-      getCreatedAt() {
-        return this.createdAt;
-      }
-    };
-  }
-});
-
-// src/history/ClearSelectionCommand.ts
-var ClearSelectionCommand_exports = {};
-__export(ClearSelectionCommand_exports, {
-  ClearSelectionCommand: () => ClearSelectionCommand
-});
-var ClearSelectionCommand;
-var init_ClearSelectionCommand = __esm({
-  "src/history/ClearSelectionCommand.ts"() {
-    ClearSelectionCommand = class {
-      constructor() {
-        this.description = "Clear selection";
-        this.previousNodeId = null;
-        this.isFirstExecution = true;
-      }
-      /**
-       * execute: 선택 해제 (null 설정)
-       *
-       * Phase 5.1:
-       * - persistentState.ui.selectedNodeId = null
-       */
-      execute(context) {
-        if (this.isFirstExecution) {
-          this.previousNodeId = context.persistent.ui.selectedNodeId;
-          this.isFirstExecution = false;
-        }
-        context.persistent.ui.selectedNodeId = null;
-      }
-      /**
-       * undo: 이전 선택 상태로 복원
-       *
-       * Phase 5.1:
-       * - persistentState.ui.selectedNodeId를 previousNodeId로 복원
-       */
-      undo(context) {
-        context.persistent.ui.selectedNodeId = this.previousNodeId;
-      }
-    };
-  }
-});
-
 // src/main.ts
 var main_exports = {};
 __export(main_exports, {
-  default: () => NeroMindPlugin
+  default: () => KKNeroMindPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian3 = require("obsidian");
-
-// src/views/NeroMindView.ts
 var import_obsidian = require("obsidian");
 
-// src/types/index.ts
-var SVG_NS = "http://www.w3.org/2000/svg";
-var NODE_CONSTANTS = {
-  MIN_WIDTH: 120,
-  HEIGHT: 40,
-  BORDER_RADIUS: 12,
-  PADDING: 12
-};
+// src/schema/types.ts
+var CURRENT_SCHEMA_VERSION = 1;
 
-// src/state/StateManager.ts
-var StateManager = class {
-  constructor() {
-    this.persistentState = this.createInitialPersistentState();
-    this.ephemeralState = this.createInitialEphemeralState();
-  }
+// src/schema/validator.ts
+var SchemaValidator = class {
   /**
-   * EventBus 주입 (선택적)
-   * - 주입되지 않아도 기존 동작을 유지해야 하므로 optional 로 둔다.
+   * 스키마 검증
+   * 
+   * @returns true if valid, false otherwise
    */
-  setEventBus(eventBus) {
-    this.eventBus = eventBus;
-  }
-  /**
-   * 현재 상태의 읽기 전용 스냅샷을 반환
-   * - 외부 소비자는 반환값을 수정하더라도 내부 상태에 영향 없음
-   * - 내부 배열까지 deep freeze하여 불변성 보장
-   *
-   * Phase 5.1: selectedNodeId는 persistentState.ui에서 가져옴
-   */
-  getSnapshot() {
-    const nodes = Object.freeze(
-      Array.from(this.persistentState.graph.nodes.values()).map(
-        (node) => this.cloneNode(node)
-      )
-    );
-    const edges = Object.freeze(
-      Array.from(this.persistentState.graph.edges.values()).map(
-        (edge) => ({ ...edge })
-      )
-    );
-    const pinnedNodeIds = Object.freeze(
-      Array.from(this.persistentState.pinnedNodes)
-    );
-    const collapsedNodeIds = Object.freeze(
-      Array.from(this.ephemeralState.collapsedNodes)
-    );
-    return Object.freeze({
-      nodes,
-      edges,
-      rootId: this.persistentState.graph.rootId,
-      pinnedNodeIds,
-      collapsedNodeIds,
-      selectedNodeId: this.persistentState.ui.selectedNodeId,
-      // Phase 5.1: persistent
-      editingNodeId: this.ephemeralState.editingNodeId
-    });
-  }
-  /**
-   * 커맨드를 적용하고 최신 스냅샷을 반환
-   * - 단방향 흐름: 입력 → Command → State → Snapshot
-   */
-  apply(command) {
-    command.execute(this.getContext());
-    return this.getSnapshot();
-  }
-  /**
-   * 초기 영구 상태 생성
-   *
-   * Phase 5.1: ui 상태 추가
-   */
-  createInitialPersistentState() {
-    return {
-      schemaVersion: 1,
-      graph: {
-        nodes: /* @__PURE__ */ new Map(),
-        edges: /* @__PURE__ */ new Map(),
-        rootId: ""
-      },
-      layout: {
-        viewport: {
-          x: 0,
-          y: 0,
-          zoom: 1
-        },
-        nodePositions: /* @__PURE__ */ new Map()
-      },
-      settings: {
-        autoAlign: true,
-        centerOnCreate: true,
-        minimap: {
-          enabled: true,
-          size: "medium",
-          opacity: 0.9
-        }
-      },
-      pinnedNodes: /* @__PURE__ */ new Set(),
-      ui: {
-        selectedNodeId: null
-        // Phase 5.1: 선택 상태 (Undo 대상)
-      }
-    };
-  }
-  /**
-   * 초기 임시 상태 생성
-   */
-  createInitialEphemeralState() {
-    return {
-      selectedNodeId: null,
-      editingNodeId: null,
-      collapsedNodes: /* @__PURE__ */ new Set(),
-      dragState: null,
-      lastSelectedNodeId: null
-    };
-  }
-  // =========================================================================
-  // Getters (Read-Only Interface)
-  // =========================================================================
-  /**
-   * 노드 조회
-   * - Readonly 반환으로 외부에서 내부 상태 직접 수정 방지
-   */
-  getNode(nodeId) {
-    return this.persistentState.graph.nodes.get(nodeId);
-  }
-  /**
-   * 모든 노드 조회
-   * - Readonly 반환으로 외부에서 내부 상태 직접 수정 방지
-   */
-  getAllNodes() {
-    return Array.from(this.persistentState.graph.nodes.values());
-  }
-  /**
-   * 루트 노드 조회
-   * - Readonly 반환으로 외부에서 내부 상태 직접 수정 방지
-   */
-  getRootNode() {
-    const rootId = this.persistentState.graph.rootId;
-    if (!rootId)
-      return null;
-    return this.getNode(rootId) || null;
-  }
-  /**
-   * 엣지 조회
-   * - Readonly 반환으로 외부에서 내부 상태 직접 수정 방지
-   */
-  getEdge(edgeId) {
-    return this.persistentState.graph.edges.get(edgeId);
-  }
-  /**
-   * 선택된 노드 ID 조회
-   */
-  getSelectedNodeId() {
-    return this.ephemeralState.selectedNodeId;
-  }
-  /**
-   * 편집 중인 노드 ID 조회
-   */
-  getEditingNodeId() {
-    return this.ephemeralState.editingNodeId;
-  }
-  // =========================================================================
-  // Setters (Write-Only Interface)
-  // Phase 2+: Command 패턴으로 변환 예정
-  // =========================================================================
-  /**
-   * 노드 추가
-   *
-   * 제약사항:
-   * - 첫 번째 노드는 자동으로 루트 노드로 설정됨
-   * - 중복 ID 검증 없음 (호출자 책임)
-   * - 이벤트 발행 없음 (Phase 2+)
-   */
-  addNode(node) {
-    this.persistentState.graph.nodes.set(node.id, node);
-    if (!this.persistentState.graph.rootId) {
-      this.persistentState.graph.rootId = node.id;
-    }
-    this.emitSafe("nodeCreated", { node });
-  }
-  /**
-   * 노드 제거
-   *
-   * ⚠️ 경고: 현재 불완전한 구현
-   * - 연결된 엣지 제거 안 됨 (고아 엣지 발생)
-   * - 자식 노드 참조 업데이트 안 됨
-   * - 루트 노드 제거 시 그래프 무효화 가능
-   * - Phase 2+에서 완전한 구현 예정
-   */
-  removeNode(nodeId) {
-    this.persistentState.graph.nodes.delete(nodeId);
-    this.emitSafe("nodeDeleted", { nodeId });
-  }
-  /**
-   * 노드 업데이트
-   *
-   * 제약사항:
-   * - nodeId가 존재하지 않으면 조용히 실패 (undefined 반환)
-   * - updates 유효성 검증 없음 (잘못된 값 방지 안 됨)
-   * - childIds 등 관계 필드 수정 시 그래프 무결성 보장 안 됨
-   * - updatedAt은 자동 갱신됨
-   */
-  updateNode(nodeId, updates) {
-    const node = this.persistentState.graph.nodes.get(nodeId);
-    if (!node)
-      return;
-    Object.assign(node, updates);
-    node.updatedAt = Date.now();
-    this.emitSafe("nodeUpdated", { node });
-  }
-  /**
-   * 노드 선택 (Phase 4.x: Command 패턴)
-   *
-   * 제약사항:
-   * - nodeId 존재 여부 검증 안 됨
-   * - 이전 선택은 lastSelectedNodeId에 자동 저장됨
-   * - null 전달 시 선택 해제
-   *
-   * Phase 4.x:
-   * - SelectNodeCommand를 통해 apply() 경로 사용
-   * - HistoryManager 통합은 Phase 4.x+ 예정
-   */
-  selectNode(nodeId) {
-    const { SelectNodeCommand: SelectNodeCommand2 } = (init_SelectNodeCommand(), __toCommonJS(SelectNodeCommand_exports));
-    const command = new SelectNodeCommand2(nodeId);
-    this.apply(command);
-  }
-  /**
-   * 노드 편집 모드 진입
-   *
-   * 제약사항:
-   * - nodeId 존재 여부 검증 안 됨
-   * - 선택 상태와 독립적 (편집 중이어도 선택되지 않을 수 있음)
-   * - null 전달 시 편집 모드 종료
-   * - 동시에 여러 노드 편집 불가 (마지막 호출만 유효)
-   */
-  setEditingNode(nodeId) {
-    this.ephemeralState.editingNodeId = nodeId;
-  }
-  /**
-   * 노드 이동 (Phase 4.x: Command 패턴)
-   *
-   * 제약사항:
-   * - nodeId 존재 여부 검증 안 됨
-   * - 레이아웃 계산은 외부에서 수행
-   * - 다른 노드에 영향 주지 않음
-   *
-   * Phase 4.x:
-   * - MoveNodeCommand를 통해 apply() 경로 사용
-   * - 현재 위치를 from으로 자동 캡처
-   * - HistoryManager 통합은 Phase 4.x+ 예정
-   *
-   * @param nodeId - 이동할 노드 ID
-   * @param toX - 목표 x 좌표
-   * @param toY - 목표 y 좌표
-   */
-  moveNode(nodeId, toX, toY) {
-    const node = this.persistentState.graph.nodes.get(nodeId);
-    if (!node) {
-      return;
-    }
-    const from = { x: node.position.x, y: node.position.y };
-    const to = { x: toX, y: toY };
-    const { MoveNodeCommand: MoveNodeCommand2 } = (init_MoveNodeCommand(), __toCommonJS(MoveNodeCommand_exports));
-    const command = new MoveNodeCommand2(nodeId, from, to);
-    this.apply(command);
-  }
-  /**
-   * 선택 해제 (Phase 5.1: Command 패턴)
-   *
-   * Phase 5.1:
-   * - ClearSelectionCommand를 통해 apply() 경로 사용
-   * - Undo/Redo 대상
-   */
-  clearSelection() {
-    const { ClearSelectionCommand: ClearSelectionCommand2 } = (init_ClearSelectionCommand(), __toCommonJS(ClearSelectionCommand_exports));
-    const command = new ClearSelectionCommand2();
-    this.apply(command);
-  }
-  /**
-   * 현재 상태 컨텍스트 (Command 전용)
-   */
-  getContext() {
-    return {
-      persistent: this.persistentState,
-      ephemeral: this.ephemeralState,
-      emit: this.emitSafe.bind(this)
-    };
-  }
-  /**
-   * 스냅샷용 노드 복제
-   */
-  cloneNode(node) {
-    return {
-      ...node,
-      position: { ...node.position },
-      childIds: [...node.childIds]
-    };
-  }
-  /**
-   * EventBus에 안전하게 발행
-   * - 설정되지 않았거나 핸들러 에러 발생 시 상태 변경에 영향을 주지 않는다.
-   */
-  emitSafe(eventName, payload) {
-    if (!this.eventBus)
-      return;
-    try {
-      this.eventBus.emit(eventName, payload);
-    } catch (e) {
-    }
-  }
-  // =========================================================================
-  // 직렬화/역직렬화 (Phase 3: 파일 저장용)
-  // =========================================================================
-  /**
-   * 상태를 JSON으로 직렬화
-   */
-  serialize() {
-    const data = {
-      schemaVersion: this.persistentState.schemaVersion,
-      nodes: Array.from(this.persistentState.graph.nodes.entries()),
-      edges: Array.from(this.persistentState.graph.edges.entries()),
-      rootId: this.persistentState.graph.rootId,
-      layout: {
-        viewport: this.persistentState.layout.viewport,
-        nodePositions: Array.from(
-          this.persistentState.layout.nodePositions.entries()
-        )
-      },
-      settings: this.persistentState.settings,
-      pinnedNodes: Array.from(this.persistentState.pinnedNodes)
-    };
-    return JSON.stringify(data, null, 2);
-  }
-  /**
-   * JSON에서 상태 복원
-   */
-  deserialize(jsonString) {
-    try {
-      const data = JSON.parse(jsonString);
-      this.persistentState.schemaVersion = data.schemaVersion || 1;
-      this.persistentState.graph.nodes = new Map(data.nodes || []);
-      this.persistentState.graph.edges = new Map(data.edges || []);
-      this.persistentState.graph.rootId = data.rootId || "";
-      if (data.layout) {
-        this.persistentState.layout.viewport = data.layout.viewport || {
-          x: 0,
-          y: 0,
-          zoom: 1
-        };
-        this.persistentState.layout.nodePositions = new Map(
-          data.layout.nodePositions || []
-        );
-      }
-      this.persistentState.settings = data.settings || this.persistentState.settings;
-      this.persistentState.pinnedNodes = new Set(data.pinnedNodes || []);
-    } catch (error) {
-      console.error("Failed to deserialize state:", error);
-    }
-  }
-  // =========================================================================
-  // Disposable
-  // =========================================================================
-  destroy() {
-    this.persistentState.graph.nodes.clear();
-    this.persistentState.graph.edges.clear();
-    this.persistentState.layout.nodePositions.clear();
-    this.persistentState.pinnedNodes.clear();
-    this.ephemeralState.collapsedNodes.clear();
-  }
-};
-
-// src/history/TransactionCommand.ts
-var TransactionCommand = class {
-  constructor(commands, description) {
-    this.description = "Transaction";
-    this.commands = commands;
-    if (description) {
-      this.description = description;
-    }
-  }
-  execute(context) {
-    const executed = [];
-    try {
-      for (const command of this.commands) {
-        command.execute(context);
-        executed.push(command);
-      }
-    } catch (error) {
-      for (let i = executed.length - 1; i >= 0; i -= 1) {
-        try {
-          executed[i].undo(context);
-        } catch (e) {
-        }
-      }
-      throw error;
-    }
-  }
-  undo(context) {
-    for (let i = this.commands.length - 1; i >= 0; i -= 1) {
-      this.commands[i].undo(context);
-    }
-  }
-};
-
-// src/history/HistoryManager.ts
-init_MoveNodeCommand();
-var HistoryManager = class {
-  /**
-   * HistoryManager 생성자
-   *
-   * @param stateManager - 래핑할 StateManager 인스턴스
-   *
-   * 책임:
-   * - StateManager 참조 저장
-   * - 빈 히스토리 큐 초기화
-   *
-   * 비책임:
-   * - StateManager의 초기 상태 설정 (호출자 책임)
-   */
-  constructor(stateManager) {
-    this.commandQueue = [];
-    this.MAX_HISTORY = 10;
-    this.coalesceWindowMs = 300;
-    this.coalesceBlocked = false;
-    this.stateManager = stateManager;
-  }
-  /**
-   * UndoableCommand 실행
-   *
-   * 책임:
-   * 1. StateManager.apply(command) 호출로 명령 실행
-   * 2. 실행된 커맨드를 히스토리 큐에 추가
-   * 3. MAX_HISTORY 초과 시 가장 오래된 커맨드 제거
-   * 4. 현재 상태 스냅샷 반환
-   *
-   * @param command - 실행할 UndoableCommand
-   * @returns 명령 실행 후의 StateSnapshot
-   *
-   * 비책임:
-   * - 커맨드 유효성 검증 (구현체의 책임)
-   * - StateManager 내부 상태 직접 조작
-   * - EventBus 발행
-   */
-  execute(command) {
-    if (Array.isArray(command)) {
-      const transaction = new TransactionCommand(command);
-      return this.executeSingle(transaction);
-    }
-    return this.executeSingle(command);
-  }
-  endMoveCoalescing() {
-    this.coalesceBlocked = true;
-  }
-  executeSingle(command) {
-    const mergedSnapshot = this.tryCoalesceMove(command);
-    if (mergedSnapshot) {
-      return mergedSnapshot;
-    }
-    const snapshot = this.stateManager.apply(command);
-    this.commandQueue.push(command);
-    if (this.commandQueue.length > this.MAX_HISTORY) {
-      this.commandQueue.shift();
-    }
-    return snapshot;
-  }
-  tryCoalesceMove(command) {
-    if (!(command instanceof MoveNodeCommand)) {
-      this.coalesceBlocked = false;
-      return null;
-    }
-    if (this.coalesceBlocked) {
-      this.coalesceBlocked = false;
-      return null;
-    }
-    const lastCommand = this.commandQueue[this.commandQueue.length - 1];
-    if (!(lastCommand instanceof MoveNodeCommand)) {
-      return null;
-    }
-    if (!this.canMergeMoveCommands(lastCommand, command)) {
-      return null;
-    }
-    lastCommand.updateNextPosition(command.getNextPosition());
-    const snapshot = this.stateManager.apply(lastCommand);
-    return snapshot;
-  }
-  canMergeMoveCommands(previous, next) {
-    if (previous.getNodeId() !== next.getNodeId()) {
+  validate(data) {
+    if (typeof data !== "object" || data === null) {
+      console.error("[SchemaValidator] Data is not an object");
       return false;
     }
-    const lastAppliedAt = previous.getLastAppliedAt();
-    const now = next.getCreatedAt();
-    if (lastAppliedAt === 0) {
+    const schema = data;
+    if (!this.validateSchemaVersion(schema)) {
       return false;
     }
-    return now - lastAppliedAt <= this.coalesceWindowMs;
-  }
-  /**
-   * 마지막 작업 취소
-   *
-   * 책임:
-   * 1. 히스토리 큐에서 마지막 커맨드 추출 (pop)
-   * 2. Inverse Operation 패턴으로 undo() 실행
-   * 3. StateManager을 통해 역방향 변경 적용
-   * 4. 복원된 상태 스냅샷 반환
-   *
-   * @returns 취소 후의 StateSnapshot
-   * @throws Error - 취소할 히스토리가 없으면 에러
-   *
-   * 비책임:
-   * - undo 가능 여부 사전 확인 (canUndo 메서드 별도 제공)
-   * - Redo 기능
-   * - EventBus 발행
-   */
-  undo() {
-    if (!this.canUndo()) {
-      throw new Error("No history to undo");
+    if (!schema.metadata || !schema.nodes || !schema.edges || !schema.camera) {
+      console.error("[SchemaValidator] Missing required top-level fields");
+      return false;
     }
-    const command = this.commandQueue.pop();
-    const undoWrapper = {
-      description: `Undo: ${command.description}`,
-      execute: (context) => {
-        command.undo(context);
+    if (!this.validateMetadata(schema.metadata)) {
+      return false;
+    }
+    if (!this.validateNodes(schema.nodes)) {
+      return false;
+    }
+    if (!this.validateEdges(schema.edges, schema.nodes)) {
+      return false;
+    }
+    if (!this.validateCamera(schema.camera)) {
+      return false;
+    }
+    return true;
+  }
+  /**
+   * Sanitize (Phase 1에서는 검증만)
+   * 
+   * @returns data if valid, null otherwise
+   */
+  sanitize(data) {
+    return this.validate(data) ? data : null;
+  }
+  /**
+   * schemaVersion 검증
+   */
+  validateSchemaVersion(schema) {
+    if (typeof schema.schemaVersion !== "number") {
+      console.error("[SchemaValidator] schemaVersion is not a number");
+      return false;
+    }
+    if (!Number.isInteger(schema.schemaVersion)) {
+      console.error("[SchemaValidator] schemaVersion must be an integer");
+      return false;
+    }
+    if (schema.schemaVersion <= 0) {
+      console.error("[SchemaValidator] schemaVersion must be positive");
+      return false;
+    }
+    if (schema.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+      console.error(`[SchemaValidator] Unsupported schema version: ${schema.schemaVersion}`);
+      return false;
+    }
+    return true;
+  }
+  /**
+   * metadata 검증
+   * 
+   * CRITICAL: 필드명 주의
+   * - created (NOT createdAt)
+   * - modified (NOT updatedAt)
+   * - title (필수)
+   */
+  validateMetadata(metadata) {
+    if (typeof metadata.created !== "number") {
+      console.error("[SchemaValidator] metadata.created must be number");
+      return false;
+    }
+    if (typeof metadata.modified !== "number") {
+      console.error("[SchemaValidator] metadata.modified must be number");
+      return false;
+    }
+    if (typeof metadata.title !== "string") {
+      console.error("[SchemaValidator] metadata.title must be string");
+      return false;
+    }
+    if (metadata.created < 0) {
+      console.error("[SchemaValidator] metadata.created must be non-negative");
+      return false;
+    }
+    if (metadata.modified < 0) {
+      console.error("[SchemaValidator] metadata.modified must be non-negative");
+      return false;
+    }
+    if (metadata.author !== void 0 && typeof metadata.author !== "string") {
+      console.error("[SchemaValidator] metadata.author must be string");
+      return false;
+    }
+    if (metadata.tags !== void 0) {
+      if (!Array.isArray(metadata.tags)) {
+        console.error("[SchemaValidator] metadata.tags must be array");
+        return false;
       }
-    };
-    const snapshot = this.stateManager.apply(undoWrapper);
-    return snapshot;
+      for (const tag of metadata.tags) {
+        if (typeof tag !== "string") {
+          console.error("[SchemaValidator] metadata.tags items must be strings");
+          return false;
+        }
+      }
+    }
+    return true;
   }
   /**
-   * 취소 가능 여부
-   *
-   * @returns true면 undo() 호출 가능, false면 히스토리 없음
-   *
-   * 책임:
-   * - 커맨드 큐 상태 확인
-   *
-   * 비책임:
-   * - StateManager 상태 확인 (irrelevant)
-   * - Redo 가능 여부 확인
+   * nodes 검증
    */
-  canUndo() {
-    return this.commandQueue.length > 0;
+  validateNodes(nodes) {
+    if (typeof nodes !== "object" || nodes === null) {
+      console.error("[SchemaValidator] nodes must be an object");
+      return false;
+    }
+    if (Array.isArray(nodes)) {
+      console.error("[SchemaValidator] nodes must be Record, not Array");
+      return false;
+    }
+    for (const [key, node] of Object.entries(nodes)) {
+      if (!this.validateNode(key, node)) {
+        return false;
+      }
+    }
+    return true;
   }
   /**
-   * 현재 히스토리 크기
-   *
-   * @returns 저장된 커맨드 개수
-   *
-   * 용도:
-   * - UI에서 히스토리 개수 표시
-   * - 디버깅
-   * - 테스트
+   * 개별 노드 검증
    */
-  getHistorySize() {
-    return this.commandQueue.length;
+  validateNode(key, node) {
+    if (typeof node.id !== "string") {
+      console.error(`[SchemaValidator] Node ${key}: id must be string`);
+      return false;
+    }
+    if (node.id !== key) {
+      console.error(`[SchemaValidator] Node ${key}: id mismatch`);
+      return false;
+    }
+    if (typeof node.content !== "string") {
+      console.error(`[SchemaValidator] Node ${key}: content must be string`);
+      return false;
+    }
+    if (!this.validatePosition(node.position)) {
+      console.error(`[SchemaValidator] Node ${key}: invalid position`);
+      return false;
+    }
+    if (node.size !== void 0) {
+      if (!this.validateSize(node.size)) {
+        console.error(`[SchemaValidator] Node ${key}: invalid size`);
+        return false;
+      }
+    }
+    if (node.style !== void 0) {
+      if (typeof node.style !== "object" || node.style === null) {
+        console.error(`[SchemaValidator] Node ${key}: style must be object`);
+        return false;
+      }
+      if (Object.keys(node.style).length > 0) {
+        console.error(`[SchemaValidator] Node ${key}: style must be empty in v1`);
+        return false;
+      }
+    }
+    if (node.linkedNote !== void 0 && typeof node.linkedNote !== "string") {
+      console.error(`[SchemaValidator] Node ${key}: linkedNote must be string`);
+      return false;
+    }
+    return true;
   }
   /**
-   * 히스토리 초기화 (선택사항)
-   *
-   * 용도:
-   * - 새 파일 로드 시 이전 히스토리 제거
-   * - 테스트
-   *
-   * 책임:
-   * - 모든 커맨드 큐 비우기
-   *
-   * 비책임:
-   * - StateManager 상태 초기화
+   * position 검증
    */
-  clearHistory() {
-    this.commandQueue.length = 0;
+  validatePosition(position) {
+    if (typeof position !== "object" || position === null) {
+      return false;
+    }
+    if (typeof position.x !== "number" || typeof position.y !== "number") {
+      return false;
+    }
+    if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+      return false;
+    }
+    return true;
   }
   /**
-   * StateManager 직접 접근 (고급 사용)
-   *
-   * 용도:
-   * - Renderer 등에서 현재 상태 조회
-   * - StateManager의 getSnapshot() 등 직접 호출
-   *
-   * 책임:
-   * - StateManager 인스턴스 반환
-   *
-   * 주의:
-   * - 이 메서드로 StateManager.apply() 호출 시 히스토리에 기록되지 않음
-   * - 히스토리가 필요하면 HistoryManager.execute() 사용
+   * size 검증
    */
-  getStateManager() {
-    return this.stateManager;
+  validateSize(size) {
+    if (typeof size !== "object" || size === null) {
+      return false;
+    }
+    if (typeof size.width !== "number" || typeof size.height !== "number") {
+      return false;
+    }
+    if (size.width <= 0 || size.height <= 0) {
+      return false;
+    }
+    return true;
   }
   /**
-   * 리소스 정리
-   *
-   * 책임:
-   * - 히스토리 큐 비우기
-   * - StateManager 정리
-   *
-   * 비책임:
-   * - StateManager는 자신의 destroy()를 호출하므로 여기서는 관리 해제만
+   * edges 검증
    */
-  destroy() {
-    this.commandQueue.length = 0;
-    this.stateManager.destroy();
+  validateEdges(edges, nodes) {
+    if (typeof edges !== "object" || edges === null) {
+      console.error("[SchemaValidator] edges must be an object");
+      return false;
+    }
+    if (Array.isArray(edges)) {
+      console.error("[SchemaValidator] edges must be Record, not Array");
+      return false;
+    }
+    for (const [key, edge] of Object.entries(edges)) {
+      if (!this.validateEdge(key, edge, nodes)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  /**
+   * 개별 엣지 검증
+   */
+  validateEdge(key, edge, nodes) {
+    if (typeof edge.id !== "string") {
+      console.error(`[SchemaValidator] Edge ${key}: id must be string`);
+      return false;
+    }
+    if (edge.id !== key) {
+      console.error(`[SchemaValidator] Edge ${key}: id mismatch`);
+      return false;
+    }
+    if (typeof edge.from !== "string" || typeof edge.to !== "string") {
+      console.error(`[SchemaValidator] Edge ${key}: from/to must be strings`);
+      return false;
+    }
+    if (!nodes[edge.from]) {
+      console.warn(`[SchemaValidator] Edge ${key}: from node not found (will be sanitized in Phase 2)`);
+    }
+    if (!nodes[edge.to]) {
+      console.warn(`[SchemaValidator] Edge ${key}: to node not found (will be sanitized in Phase 2)`);
+    }
+    if (edge.type !== void 0) {
+      const validTypes = ["solid", "dashed", "dotted"];
+      if (!validTypes.includes(edge.type)) {
+        console.error(`[SchemaValidator] Edge ${key}: invalid type`);
+        return false;
+      }
+    }
+    return true;
+  }
+  /**
+   * camera 검증
+   */
+  validateCamera(camera) {
+    if (typeof camera !== "object" || camera === null) {
+      console.error("[SchemaValidator] camera must be an object");
+      return false;
+    }
+    if (typeof camera.x !== "number" || typeof camera.y !== "number" || typeof camera.zoom !== "number") {
+      console.error("[SchemaValidator] camera x/y/zoom must be numbers");
+      return false;
+    }
+    if (!Number.isFinite(camera.x) || !Number.isFinite(camera.y) || !Number.isFinite(camera.zoom)) {
+      console.error("[SchemaValidator] camera values must be finite");
+      return false;
+    }
+    if (camera.zoom <= 0) {
+      console.error("[SchemaValidator] camera.zoom must be positive");
+      return false;
+    }
+    return true;
   }
 };
 
-// src/events/EventBus.ts
-var EventBus = class {
+// src/utils/disposable.ts
+var DisposableRegistry = class {
   constructor() {
-    this.listeners = /* @__PURE__ */ new Map();
+    this.disposables = /* @__PURE__ */ new Set();
   }
   /**
-   * 이벤트 구독
-   * @returns 구독 해제 함수
+   * Disposable 등록
    */
-  on(eventName, handler) {
-    if (!eventName || typeof eventName !== "string") {
-      throw new Error("EventBus.on: eventName must be a non-empty string");
-    }
-    if (typeof handler !== "function") {
-      throw new Error("EventBus.on: handler must be a function");
-    }
-    let handlers = this.listeners.get(eventName);
-    if (!handlers) {
-      handlers = /* @__PURE__ */ new Set();
-      this.listeners.set(eventName, handlers);
-    }
-    handlers.add(handler);
-    return () => {
-      const current = this.listeners.get(eventName);
-      if (!current)
-        return;
-      current.delete(handler);
-      if (current.size === 0) {
-        this.listeners.delete(eventName);
-      }
-    };
+  register(disposable) {
+    this.disposables.add(disposable);
   }
   /**
-   * 이벤트 발행
+   * Disposable 등록 해제
    */
-  emit(eventName, payload) {
-    if (!eventName || typeof eventName !== "string") {
-      throw new Error("EventBus.emit: eventName must be a non-empty string");
-    }
-    if (payload === void 0) {
-      throw new Error("EventBus.emit: payload is undefined");
-    }
-    const handlers = this.listeners.get(eventName);
-    if (!handlers)
-      return;
-    for (const handler of handlers) {
+  unregister(disposable) {
+    this.disposables.delete(disposable);
+  }
+  /**
+   * 모든 Disposable 정리
+   * 
+   * CRITICAL: 하나 실패해도 나머지 계속 진행
+   */
+  dispose() {
+    const errors = [];
+    for (const disposable of this.disposables) {
       try {
-        handler(payload);
-      } catch (e) {
-      }
-    }
-  }
-};
-
-// src/rendering/CanvasRenderer.ts
-var CanvasRenderer = class {
-  constructor() {
-    this.canvasEl = null;
-    this.context = null;
-    this.containerEl = null;
-    this.lastViewport = null;
-  }
-  init(container) {
-    this.containerEl = container;
-    this.canvasEl = document.createElement("canvas");
-    this.canvasEl.className = "neromind-canvas";
-    this.canvasEl.style.width = "100%";
-    this.canvasEl.style.height = "100%";
-    this.context = this.canvasEl.getContext("2d");
-    this.containerEl.appendChild(this.canvasEl);
-  }
-  render(nodes, edges, viewport) {
-    this.lastViewport = viewport;
-    if (!this.canvasEl || !this.context)
-      return;
-    this.resizeCanvas(viewport);
-    const ctx = this.context;
-    ctx.clearRect(0, 0, this.canvasEl.width, this.canvasEl.height);
-    ctx.save();
-    ctx.translate(-viewport.left, -viewport.top);
-    this.drawEdges(ctx, nodes, edges);
-    this.drawNodes(ctx, nodes);
-    ctx.restore();
-  }
-  update(nodes, edges) {
-    if (!this.lastViewport)
-      return;
-    this.render(nodes, edges, this.lastViewport);
-  }
-  destroy() {
-    if (this.canvasEl) {
-      this.canvasEl.remove();
-    }
-    this.canvasEl = null;
-    this.context = null;
-    this.containerEl = null;
-    this.lastViewport = null;
-  }
-  // Phase 10: Expanded return type to Element | null to support interface consistency
-  getSurfaceElement() {
-    return this.canvasEl;
-  }
-  resizeCanvas(viewport) {
-    if (!this.canvasEl)
-      return;
-    const dpr = window.devicePixelRatio || 1;
-    const width = Math.max(1, Math.floor(viewport.width));
-    const height = Math.max(1, Math.floor(viewport.height));
-    this.canvasEl.width = width * dpr;
-    this.canvasEl.height = height * dpr;
-    const ctx = this.context;
-    if (ctx) {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-  }
-  drawEdges(ctx, nodes, edges) {
-    const nodePositionMap = /* @__PURE__ */ new Map();
-    for (const node of nodes) {
-      nodePositionMap.set(node.id, node.position);
-    }
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.2)";
-    ctx.lineWidth = 2;
-    for (const edge of edges) {
-      const from = nodePositionMap.get(edge.fromNodeId);
-      const to = nodePositionMap.get(edge.toNodeId);
-      if (!from || !to)
-        continue;
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.lineTo(to.x, to.y);
-      ctx.stroke();
-    }
-  }
-  drawNodes(ctx, nodes) {
-    for (const node of nodes) {
-      ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.15)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(node.position.x, node.position.y, 30, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#1d1d1f";
-      ctx.font = "12px -apple-system, BlinkMacSystemFont, sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(node.content, node.position.x, node.position.y);
-    }
-  }
-};
-
-// src/layout/NodeTextLayout.ts
-function computeTextLayout(text, maxWidth, metrics = { fontSize: 12, fontFamily: "sans-serif" }) {
-  const { fontSize } = metrics;
-  const lineHeight = fontSize * 1.4;
-  if (!text || text.trim() === "") {
-    return {
-      lines: [""],
-      width: 0,
-      height: lineHeight
-    };
-  }
-  const words = text.split(/\s+/);
-  const lines = [];
-  let currentLine = "";
-  for (const word of words) {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    const testWidth = estimateTextWidth(testLine, fontSize);
-    if (testWidth <= maxWidth) {
-      currentLine = testLine;
-    } else {
-      if (currentLine === "") {
-        const parts = splitLongWord(word, maxWidth, fontSize);
-        for (let i = 0; i < parts.length - 1; i++) {
-          lines.push(parts[i]);
-        }
-        currentLine = parts[parts.length - 1];
-      } else {
-        lines.push(currentLine);
-        currentLine = word;
-      }
-    }
-  }
-  if (currentLine) {
-    lines.push(currentLine);
-  }
-  const actualWidth = Math.max(
-    ...lines.map((line) => estimateTextWidth(line, fontSize))
-  );
-  const actualHeight = lines.length * lineHeight;
-  return {
-    lines,
-    width: actualWidth,
-    height: actualHeight
-  };
-}
-function estimateTextWidth(text, fontSize) {
-  let totalWidth = 0;
-  for (const char of text) {
-    const code = char.charCodeAt(0);
-    if (code >= 44032 && code <= 55203) {
-      totalWidth += fontSize * 1;
-    } else {
-      totalWidth += fontSize * 0.6;
-    }
-  }
-  return totalWidth;
-}
-function splitLongWord(word, maxWidth, fontSize) {
-  const parts = [];
-  let current = "";
-  for (const char of word) {
-    const testWord = current + char;
-    const testWidth = estimateTextWidth(testWord, fontSize);
-    if (testWidth <= maxWidth) {
-      current += char;
-    } else {
-      if (current) {
-        parts.push(current);
-      }
-      current = char;
-    }
-  }
-  if (current) {
-    parts.push(current);
-  }
-  return parts.length > 0 ? parts : [word];
-}
-
-// src/rendering/DomRenderer.ts
-var DomRenderer = class {
-  constructor() {
-    this.svgElement = null;
-    this.containerEl = null;
-    this.lastViewport = null;
-    this.selectedNodeId = null;
-  }
-  init(container) {
-    this.containerEl = container;
-    this.svgElement = document.createElementNS(SVG_NS, "svg");
-    this.svgElement.setAttribute("class", "neromind-canvas");
-    this.svgElement.setAttribute("width", "100%");
-    this.svgElement.setAttribute("height", "100%");
-    const bgGroup = document.createElementNS(SVG_NS, "g");
-    bgGroup.setAttribute("id", "background-layer");
-    this.svgElement.appendChild(bgGroup);
-    const transformGroup = document.createElementNS(SVG_NS, "g");
-    transformGroup.setAttribute("id", "transform-layer");
-    transformGroup.setAttribute("transform", "translate(0, 0) scale(1)");
-    this.svgElement.appendChild(transformGroup);
-    const edgeGroup = document.createElementNS(SVG_NS, "g");
-    edgeGroup.setAttribute("id", "edge-layer");
-    transformGroup.appendChild(edgeGroup);
-    const nodeGroup = document.createElementNS(SVG_NS, "g");
-    nodeGroup.setAttribute("id", "node-layer");
-    transformGroup.appendChild(nodeGroup);
-    this.containerEl.appendChild(this.svgElement);
-    this.setupShadowFilter();
-  }
-  /**
-   * Setup Apple-style shadow filter for nodes
-   * Per UITokens.md: 0 1px 2px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.06)
-   */
-  setupShadowFilter() {
-    if (!this.svgElement)
-      return;
-    const defs = document.createElementNS(SVG_NS, "defs");
-    const filter = document.createElementNS(SVG_NS, "filter");
-    filter.setAttribute("id", "node-shadow");
-    filter.setAttribute("x", "-50%");
-    filter.setAttribute("y", "-50%");
-    filter.setAttribute("width", "200%");
-    filter.setAttribute("height", "200%");
-    const feGaussianBlur = document.createElementNS(SVG_NS, "feGaussianBlur");
-    feGaussianBlur.setAttribute("in", "SourceAlpha");
-    feGaussianBlur.setAttribute("stdDeviation", "4");
-    const feOffset = document.createElementNS(SVG_NS, "feOffset");
-    feOffset.setAttribute("dx", "0");
-    feOffset.setAttribute("dy", "2");
-    feOffset.setAttribute("result", "offsetblur");
-    const feComponentTransfer = document.createElementNS(
-      SVG_NS,
-      "feComponentTransfer"
-    );
-    const feFuncA = document.createElementNS(SVG_NS, "feFuncA");
-    feFuncA.setAttribute("type", "linear");
-    feFuncA.setAttribute("slope", "0.08");
-    feComponentTransfer.appendChild(feFuncA);
-    const feMerge = document.createElementNS(SVG_NS, "feMerge");
-    const feMergeNode1 = document.createElementNS(SVG_NS, "feMergeNode");
-    feMergeNode1.setAttribute("in", "offsetblur");
-    const feMergeNode2 = document.createElementNS(SVG_NS, "feMergeNode");
-    feMergeNode2.setAttribute("in", "SourceGraphic");
-    feMerge.appendChild(feMergeNode1);
-    feMerge.appendChild(feMergeNode2);
-    filter.appendChild(feGaussianBlur);
-    filter.appendChild(feOffset);
-    filter.appendChild(feComponentTransfer);
-    filter.appendChild(feMerge);
-    defs.appendChild(filter);
-    this.svgElement.appendChild(defs);
-  }
-  render(nodes, edges, viewport) {
-    this.lastViewport = viewport;
-    if (!this.svgElement)
-      return;
-    this.svgElement.setAttribute(
-      "viewBox",
-      `${viewport.left} ${viewport.top} ${viewport.width} ${viewport.height}`
-    );
-    this.renderEdges(nodes, edges);
-    this.renderNodes(nodes);
-  }
-  update(nodes, edges) {
-    if (!this.lastViewport)
-      return;
-    this.render(nodes, edges, this.lastViewport);
-  }
-  destroy() {
-    if (this.svgElement) {
-      this.svgElement.remove();
-      this.svgElement = null;
-    }
-    this.containerEl = null;
-    this.lastViewport = null;
-  }
-  // Phase 10: Expanded return type to Element | null to support SVG rendering
-  getSurfaceElement() {
-    return this.svgElement;
-  }
-  renderEdges(nodes, edges) {
-    const edgeLayer = this.getOrCreateEdgeLayer();
-    this.clearLayer(edgeLayer);
-    const nodePositionMap = /* @__PURE__ */ new Map();
-    for (const node of nodes) {
-      nodePositionMap.set(node.id, node.position);
-    }
-    for (const edge of edges) {
-      const from = nodePositionMap.get(edge.fromNodeId);
-      const to = nodePositionMap.get(edge.toNodeId);
-      if (!from || !to)
-        continue;
-      const line = this.createLine(from, to);
-      edgeLayer.appendChild(line);
-    }
-  }
-  renderNodes(nodes) {
-    const nodeLayer = this.getOrCreateNodeLayer();
-    this.clearLayer(nodeLayer);
-    for (const node of nodes) {
-      const textLayout = computeTextLayout(node.content, 240, {
-        fontSize: 14,
-        fontFamily: "system-ui, -apple-system"
-      });
-      const paddingX = 16;
-      const paddingY = 10;
-      const width = textLayout.width + paddingX * 2;
-      const height = textLayout.height + paddingY * 2;
-      const nodeGroup = this.createNodeGroup(
-        node.id,
-        node.position.x,
-        node.position.y
-      );
-      const isSelected = node.id === this.selectedNodeId;
-      const rect = this.createRoundedRect(width, height, isSelected);
-      nodeGroup.appendChild(rect);
-      const lineHeight = 20;
-      const totalLines = textLayout.lines.length;
-      const yOffset = -((totalLines - 1) * lineHeight) / 2;
-      textLayout.lines.forEach((line, i) => {
-        const text = document.createElementNS(SVG_NS, "text");
-        text.textContent = line;
-        text.setAttribute("x", "0");
-        const lineY = yOffset + i * lineHeight;
-        text.setAttribute("y", String(lineY));
-        text.setAttribute("text-anchor", "middle");
-        text.setAttribute("dominant-baseline", "central");
-        text.setAttribute("font-family", "system-ui, -apple-system");
-        text.setAttribute("font-size", "14");
-        text.setAttribute("fill", "#1C1C1E");
-        text.setAttribute("font-weight", isSelected ? "500" : "400");
-        text.setAttribute("pointer-events", "none");
-        nodeGroup.appendChild(text);
-      });
-      nodeLayer.appendChild(nodeGroup);
-    }
-  }
-  getOrCreateEdgeLayer() {
-    if (!this.svgElement) {
-      return document.createElementNS(SVG_NS, "g");
-    }
-    let edgeLayer = this.svgElement.querySelector(
-      "#edge-layer"
-    );
-    if (!edgeLayer) {
-      edgeLayer = document.createElementNS(SVG_NS, "g");
-      edgeLayer.setAttribute("id", "edge-layer");
-      const transformLayer = this.svgElement.querySelector("#transform-layer");
-      if (transformLayer) {
-        const nodeLayer = transformLayer.querySelector("#node-layer");
-        if (nodeLayer) {
-          transformLayer.insertBefore(edgeLayer, nodeLayer);
-        } else {
-          transformLayer.appendChild(edgeLayer);
-        }
-      } else {
-        this.svgElement.appendChild(edgeLayer);
-      }
-    }
-    return edgeLayer;
-  }
-  getOrCreateNodeLayer() {
-    if (!this.svgElement) {
-      return document.createElementNS(SVG_NS, "g");
-    }
-    let nodeLayer = this.svgElement.querySelector(
-      "#node-layer"
-    );
-    if (!nodeLayer) {
-      nodeLayer = document.createElementNS(SVG_NS, "g");
-      nodeLayer.setAttribute("id", "node-layer");
-      const transformLayer = this.svgElement.querySelector("#transform-layer");
-      if (transformLayer) {
-        transformLayer.appendChild(nodeLayer);
-      } else {
-        this.svgElement.appendChild(nodeLayer);
-      }
-    }
-    return nodeLayer;
-  }
-  clearLayer(layer) {
-    while (layer.firstChild) {
-      layer.removeChild(layer.firstChild);
-    }
-  }
-  createLine(from, to) {
-    const line = document.createElementNS(SVG_NS, "line");
-    line.setAttribute("x1", String(from.x));
-    line.setAttribute("y1", String(from.y));
-    line.setAttribute("x2", String(to.x));
-    line.setAttribute("y2", String(to.y));
-    line.setAttribute("stroke", "rgba(0, 0, 0, 0.2)");
-    line.setAttribute("stroke-width", "2");
-    return line;
-  }
-  createNodeGroup(id, x, y) {
-    const group = document.createElementNS(SVG_NS, "g");
-    group.setAttribute("id", `node-${id}`);
-    group.setAttribute("transform", `translate(${x}, ${y})`);
-    group.setAttribute("data-node-id", id);
-    return group;
-  }
-  /**
-   * Create Apple-style rounded rectangle node
-   * Per UITokens.md and NodeSelectionVisualSpec.md
-   */
-  createRoundedRect(width, height, isSelected = false) {
-    const rect = document.createElementNS(SVG_NS, "rect");
-    rect.setAttribute("x", String(-width / 2));
-    rect.setAttribute("y", String(-height / 2));
-    rect.setAttribute("width", String(width));
-    rect.setAttribute("height", String(height));
-    rect.setAttribute("rx", "10");
-    rect.setAttribute("ry", "10");
-    rect.setAttribute("fill", "#FFFFFF");
-    rect.setAttribute("filter", "url(#node-shadow)");
-    if (isSelected) {
-      rect.setAttribute("stroke", "#0A84FF");
-      rect.setAttribute("stroke-width", "2");
-    } else {
-      rect.setAttribute("stroke", "#D0D0D0");
-      rect.setAttribute("stroke-width", "1");
-    }
-    return rect;
-  }
-  /**
-   * Set selected node ID for visualization
-   * Called by NeroMindView when selection changes
-   */
-  setSelectedNodeId(nodeId) {
-    this.selectedNodeId = nodeId;
-  }
-};
-
-// src/history/CreateNodeCommand.ts
-var CreateNodeCommand = class {
-  constructor(node) {
-    this.description = "Create node";
-    this.parentWasUpdated = false;
-    this.node = node;
-  }
-  execute(context) {
-    context.persistent.graph.nodes.set(this.node.id, this.node);
-    if (!context.persistent.graph.rootId) {
-      context.persistent.graph.rootId = this.node.id;
-    }
-    if (this.node.parentId) {
-      const parent = context.persistent.graph.nodes.get(this.node.parentId);
-      if (parent && !parent.childIds.includes(this.node.id)) {
-        parent.childIds.push(this.node.id);
-        parent.updatedAt = Date.now();
-        this.parentWasUpdated = true;
-      }
-    }
-  }
-  undo(context) {
-    if (this.parentWasUpdated && this.node.parentId) {
-      const parent = context.persistent.graph.nodes.get(this.node.parentId);
-      if (parent) {
-        const index = parent.childIds.indexOf(this.node.id);
-        if (index !== -1) {
-          parent.childIds.splice(index, 1);
-          parent.updatedAt = Date.now();
-        }
-      }
-    }
-    context.persistent.graph.nodes.delete(this.node.id);
-  }
-};
-
-// src/views/NeroMindView.ts
-var VIEW_TYPE_NEROMIND = "neromind-view";
-var NeroMindView = class extends import_obsidian.ItemView {
-  constructor(leaf, plugin) {
-    super(leaf);
-    this.renderer = null;
-    this.rendererType = null;
-    this.renderSurfaceEl = null;
-    // Phase 10: Expanded to Element | null for SVG support
-    this.disposables = [];
-    this.mindmapContainerEl = null;
-    // Phase 3.1: State Management
-    this.stateManager = null;
-    // Phase 3.4: Command History
-    this.historyManager = null;
-    // Phase 11: Expandable FAB Toolbar
-    this.fabMainEl = null;
-    this.fabMenuEl = null;
-    this.fabUndoBtn = null;
-    this.fabRedoBtn = null;
-    this.isToolbarExpanded = false;
-    this.eventBus = null;
-    this.unsubscribeSettings = null;
-    this.eventUnsubscribers = [];
-    this.currentSettings = null;
-    this.baseRadius = 160;
-    this.depthGap = 140;
-    this.minAngleGap = 12;
-    this.pendingRender = false;
-    this.suppressRender = false;
-    this.ignoreNextSettingsEvent = false;
-    this.resizeObserver = null;
-    this.currentViewport = {
-      left: 0,
-      top: 0,
-      right: 0,
-      bottom: 0,
-      width: 0,
-      height: 0
-    };
-    this.viewportUnsubscribers = [];
-    this.lastSnapshot = null;
-    this.visibleNodeIds = /* @__PURE__ */ new Set();
-    this.forcedVisibleNodeIds = /* @__PURE__ */ new Set();
-    this.visibleUpdateScheduled = false;
-    this.layoutRequest = null;
-    this.layoutScheduled = false;
-    this.layoutDebounceMs = 140;
-    this.layoutDebounceTimer = null;
-    // Phase 3.1: UI Elements
-    this.undoButtonEl = null;
-    this.plugin = plugin;
-  }
-  /**
-   * 뷰 타입 반환
-   */
-  getViewType() {
-    return VIEW_TYPE_NEROMIND;
-  }
-  /**
-   * 뷰 표시 이름
-   */
-  getDisplayText() {
-    return "NeroMind";
-  }
-  /**
-   * 뷰 아이콘
-   */
-  getIcon() {
-    return "brain";
-  }
-  /**
-   * 뷰 열기
-   *
-   * Phase 3.1 주의사항:
-   * - EventBus → StateManager → HistoryManager 순서
-   * - StateManager.setEventBus() 선택적 주입
-   * - HistoryManager는 StateManager를 Wrapper로 감싼다
-   */
-  async onOpen() {
-    console.log("Opening NeroMind view...");
-    const container = this.containerEl;
-    container.empty();
-    container.addClass("neromind-view");
-    this.mindmapContainerEl = container.createDiv({
-      cls: "neromind-container"
-    });
-    this.ensureOverlay();
-    this.initializeRenderer(this.plugin.settings.rendererType);
-    this.initializeStateManagement();
-    this.registerShortcuts();
-    this.registerCanvasEvents();
-    this.setupViewportObserver();
-    this.registerViewportEvents();
-    this.applySettings(this.plugin.settings);
-    this.unsubscribeSettings = this.plugin.onSettingsChange((settings) => {
-      if (this.ignoreNextSettingsEvent) {
-        this.ignoreNextSettingsEvent = false;
-        return;
-      }
-      this.applySettings(settings);
-    });
-    this.setupFabToolbar();
-    this.initializeDefaultData();
-  }
-  ensureOverlay() {
-    if (!this.mindmapContainerEl)
-      return;
-    const existing = this.mindmapContainerEl.querySelector(".neromind-overlay");
-    if (existing)
-      return;
-    const overlayDiv = this.mindmapContainerEl.createDiv({
-      cls: "neromind-overlay"
-    });
-    overlayDiv.style.position = "absolute";
-    overlayDiv.style.top = "0";
-    overlayDiv.style.left = "0";
-    overlayDiv.style.width = "100%";
-    overlayDiv.style.height = "100%";
-    overlayDiv.style.pointerEvents = "none";
-  }
-  initializeRenderer(rendererType) {
-    var _a, _b, _c, _d, _e, _f, _g;
-    if (!this.mindmapContainerEl) {
-      console.error("[initializeRenderer] mindmapContainerEl is null!");
-      return;
-    }
-    console.log(
-      `[initializeRenderer] Initializing ${rendererType} renderer...`
-    );
-    this.destroyRenderer();
-    this.rendererType = rendererType;
-    this.renderer = this.createRenderer(rendererType);
-    this.renderer.init(this.mindmapContainerEl);
-    this.renderSurfaceEl = (_c = (_b = (_a = this.renderer).getSurfaceElement) == null ? void 0 : _b.call(_a)) != null ? _c : this.mindmapContainerEl;
-    console.log("[initializeRenderer] Renderer surface element:", {
-      surfaceType: (_d = this.renderSurfaceEl) == null ? void 0 : _d.tagName,
-      isAttached: (_e = this.renderSurfaceEl) == null ? void 0 : _e.isConnected,
-      parentElement: (_g = (_f = this.renderSurfaceEl) == null ? void 0 : _f.parentElement) == null ? void 0 : _g.className
-    });
-    this.updateViewportBounds();
-  }
-  createRenderer(rendererType) {
-    if (rendererType === "canvas") {
-      return new CanvasRenderer();
-    }
-    return new DomRenderer();
-  }
-  destroyRenderer() {
-    if (this.renderer) {
-      this.renderer.destroy();
-      this.renderer = null;
-    }
-    this.renderSurfaceEl = null;
-    this.rendererType = null;
-  }
-  /**
-   * Phase 3.1: State Management 초기화
-   *
-   * 책임:
-   * - EventBus 생성
-   * - StateManager 생성 및 EventBus 주입 (선택적)
-   * - HistoryManager 생성 (Wrapper Pattern)
-   * - Renderer 생성
-   * - disposables 배열에 모두 등록
-   *
-   * 비책임:
-   * - Command 실행
-   * - UI 갱신
-   */
-  initializeStateManagement() {
-    this.eventBus = new EventBus();
-    this.stateManager = new StateManager();
-    this.stateManager.setEventBus(this.eventBus);
-    this.addDisposable(this.stateManager);
-    this.historyManager = new HistoryManager(this.stateManager);
-    this.addDisposable(this.historyManager);
-    this.bindStateEvents();
-    console.log("State management initialized");
-  }
-  setupViewportObserver() {
-    if (!this.mindmapContainerEl)
-      return;
-    this.resizeObserver = new ResizeObserver(() => {
-      this.updateViewportBounds();
-      this.scheduleVisibleUpdate();
-    });
-    this.resizeObserver.observe(this.mindmapContainerEl);
-    this.updateViewportBounds();
-  }
-  registerViewportEvents() {
-    var _a;
-    for (const unsubscribe of this.viewportUnsubscribers) {
-      unsubscribe();
-    }
-    this.viewportUnsubscribers.length = 0;
-    const target = (_a = this.renderSurfaceEl) != null ? _a : this.mindmapContainerEl;
-    if (!target)
-      return;
-    const handler = () => {
-      this.scheduleVisibleUpdate();
-    };
-    target.addEventListener("wheel", handler, { passive: true });
-    this.viewportUnsubscribers.push(() => {
-      target.removeEventListener("wheel", handler);
-    });
-  }
-  updateViewportBounds() {
-    if (!this.mindmapContainerEl)
-      return;
-    const rect = this.mindmapContainerEl.getBoundingClientRect();
-    const width = rect.width || 800;
-    const height = rect.height || 600;
-    this.currentViewport = {
-      left: 0,
-      top: 0,
-      right: width,
-      bottom: height,
-      width,
-      height
-    };
-  }
-  bindStateEvents() {
-    if (!this.eventBus)
-      return;
-    const unsubscribeNodeUpdated = this.eventBus.on("nodeUpdated", () => {
-      if (this.suppressRender)
-        return;
-      this.scheduleRender();
-    });
-    const unsubscribeLayoutReset = this.eventBus.on(
-      "layoutResetRequested",
-      (payload) => {
-        const data = payload;
-        const rootIds = Array.isArray(data == null ? void 0 : data.rootIds) ? data.rootIds : [];
-        if (rootIds.length === 0) {
-          this.enqueueLayoutRequest({ scope: "all" });
-          return;
-        }
-        this.enqueueLayoutRequest({ scope: "subtree", rootIds });
-      }
-    );
-    this.eventUnsubscribers.push(
-      unsubscribeNodeUpdated,
-      unsubscribeLayoutReset
-    );
-    const unsubscribeLayoutSettingsChanged = this.eventBus.on(
-      "layoutSettingsChanged",
-      (payload) => {
-        var _a, _b;
-        const data = payload;
-        const patch = (_a = data == null ? void 0 : data.settings) != null ? _a : {};
-        const nextSettings = {
-          ...this.plugin.settings,
-          ...patch
-        };
-        this.plugin.settings = nextSettings;
-        this.currentSettings = { ...nextSettings };
-        this.ignoreNextSettingsEvent = true;
-        void this.plugin.saveSettings();
-        const scope = (_b = data == null ? void 0 : data.scope) != null ? _b : "all";
-        if (scope === "subtree" && (data == null ? void 0 : data.rootId)) {
-          this.enqueueLayoutRequest({
-            scope: "subtree",
-            rootIds: [data.rootId]
-          });
-          return;
-        }
-        this.enqueueLayoutRequest({ scope: "all" });
-      }
-    );
-    this.eventUnsubscribers.push(unsubscribeLayoutSettingsChanged);
-  }
-  /**
-   * Phase 3.1: Undo 버튼 생성
-   *
-   * 책임:
-   * - HTML 버튼 요소 생성
-   * - 스타일 적용
-   * - 클릭 이벤트 연결
-   * - 초기 활성화 상태 설정
-   *
-   * 비책임:
-   * - Undo 로직 실행 (handleUndo 책임)
-   */
-  createUndoButton() {
-    const overlayEl = this.containerEl.querySelector(".neromind-overlay");
-    if (!overlayEl) {
-      console.warn("Overlay element not found");
-      return;
-    }
-    this.undoButtonEl = overlayEl.createEl("button", {
-      text: "Undo",
-      cls: "neromind-undo-button"
-    });
-    this.undoButtonEl.style.position = "absolute";
-    this.undoButtonEl.style.bottom = "20px";
-    this.undoButtonEl.style.right = "20px";
-    this.undoButtonEl.style.padding = "8px 16px";
-    this.undoButtonEl.style.border = "1px solid rgba(0, 0, 0, 0.1)";
-    this.undoButtonEl.style.borderRadius = "8px";
-    this.undoButtonEl.style.background = "rgba(255, 255, 255, 0.9)";
-    this.undoButtonEl.style.cursor = "pointer";
-    this.undoButtonEl.style.pointerEvents = "auto";
-    this.undoButtonEl.style.fontSize = "14px";
-    this.undoButtonEl.style.fontFamily = "-apple-system, BlinkMacSystemFont, sans-serif";
-    this.undoButtonEl.addEventListener("click", () => this.handleUndo());
-    this.updateUndoButton();
-  }
-  /**
-   * Phase 3.1: Undo 처리
-   *
-   * 책임:
-   * - canUndo() 확인
-   * - historyManager.undo() 호출
-   * - snapshot 렌더링
-   * - UI 갱신
-   * - 에러 처리
-   *
-   * 비책임:
-   * - StateManager 직접 조작
-   * - Command 실행 (execute는 사용자 작업용)
-   */
-  handleUndo() {
-    if (!this.historyManager || !this.historyManager.canUndo()) {
-      console.log("Cannot undo: no history available");
-      return;
-    }
-    try {
-      const snapshot = this.historyManager.undo();
-      this.renderSnapshot(snapshot);
-      this.updateUndoButton();
-      console.log("Undo successful");
-    } catch (error) {
-      console.error("Undo failed:", error);
-    }
-  }
-  /**
-   * Phase 3.1: Undo 버튼 상태 갱신
-   *
-   * 책임:
-   * - canUndo() 결과에 따라 버튼 활성화/비활성화
-   * - 버튼 텍스트 설정
-   *
-   * 비책임:
-   * - Undo 로직 실행
-   */
-  updateUndoButton() {
-    if (!this.undoButtonEl || !this.historyManager) {
-      return;
-    }
-    const canUndo = this.historyManager.canUndo();
-    this.undoButtonEl.disabled = !canUndo;
-    if (!canUndo) {
-      this.undoButtonEl.style.opacity = "0.5";
-      this.undoButtonEl.style.cursor = "not-allowed";
-    } else {
-      this.undoButtonEl.style.opacity = "1";
-      this.undoButtonEl.style.cursor = "pointer";
-    }
-  }
-  /**
-   * Phase 3.4: Snapshot 렌더링
-   *
-   * 책임:
-   * - StateSnapshot을 Renderer에 전달
-   * - 콘솔 로깅 (디버깅용)
-   *
-   * 비책임:
-   * - Renderer 내부 로직 수정
-   * - StateManager 상태 직접 조작
-   */
-  renderSnapshot(snapshot) {
-    console.log("[renderSnapshot] Rendering snapshot:", {
-      nodeCount: snapshot.nodes.length,
-      edgeCount: snapshot.edges.length,
-      rootId: snapshot.rootId,
-      hasRenderer: !!this.renderer,
-      rendererType: this.rendererType
-    });
-    if (!this.renderer) {
-      console.error("[renderSnapshot] Renderer is null! Cannot render.");
-      return;
-    }
-    this.lastSnapshot = snapshot;
-    const visibleNodeIds = this.computeVisibleNodeIds(snapshot);
-    console.log("[renderSnapshot] Visible nodes:", {
-      total: snapshot.nodes.length,
-      visible: visibleNodeIds.size,
-      visibleIds: Array.from(visibleNodeIds)
-    });
-    this.applyVisibleNodes(snapshot, visibleNodeIds);
-  }
-  applySettings(settings) {
-    const prev = this.currentSettings;
-    this.currentSettings = { ...settings };
-    if (!prev || prev.rendererType !== settings.rendererType) {
-      this.initializeRenderer(settings.rendererType);
-      this.registerViewportEvents();
-      if (this.lastSnapshot) {
-        this.renderSnapshot(this.lastSnapshot);
-      }
-    }
-    const layoutChanged = !prev || prev.enableRadialLayout !== settings.enableRadialLayout || prev.layoutDirection !== settings.layoutDirection;
-    if (layoutChanged) {
-      this.enqueueLayoutRequest({ scope: "all" });
-    }
-  }
-  enqueueLayoutRequest(request) {
-    if (!this.layoutRequest) {
-      this.layoutRequest = { scope: request.scope, rootIds: /* @__PURE__ */ new Set() };
-    }
-    if (request.scope === "all") {
-      this.layoutRequest.scope = "all";
-      this.layoutRequest.rootIds.clear();
-    } else if (this.layoutRequest.scope !== "all" && request.rootIds) {
-      for (const rootId of request.rootIds) {
-        this.layoutRequest.rootIds.add(rootId);
-      }
-    }
-    this.scheduleLayoutFlush();
-  }
-  scheduleLayoutFlush() {
-    if (this.layoutScheduled)
-      return;
-    this.layoutScheduled = true;
-    const flush = () => {
-      this.layoutScheduled = false;
-      if (!this.layoutRequest)
-        return;
-      const request = this.layoutRequest;
-      this.layoutRequest = null;
-      this.flushLayoutRequest(request);
-    };
-    if (this.layoutDebounceMs > 0) {
-      if (this.layoutDebounceTimer !== null) {
-        window.clearTimeout(this.layoutDebounceTimer);
-      }
-      this.layoutDebounceTimer = window.setTimeout(() => {
-        this.layoutDebounceTimer = null;
-        requestAnimationFrame(flush);
-      }, this.layoutDebounceMs);
-      return;
-    }
-    requestAnimationFrame(flush);
-  }
-  flushLayoutRequest(request) {
-    var _a;
-    const settings = (_a = this.currentSettings) != null ? _a : this.plugin.settings;
-    if (request.scope === "all") {
-      this.recomputeLayout(settings, { scope: "all" });
-      return;
-    }
-    if (request.rootIds.size === 0) {
-      this.recomputeLayout(settings, { scope: "all" });
-      return;
-    }
-    for (const rootId of request.rootIds) {
-      this.recomputeLayout(settings, { scope: "subtree", rootId });
-    }
-  }
-  recomputeLayout(settings, options = { scope: "all" }) {
-    if (!this.stateManager || !this.renderer) {
-      return;
-    }
-    const snapshot = this.stateManager.getSnapshot();
-    if (!settings.enableRadialLayout || snapshot.nodes.length === 0) {
-      this.renderSnapshot(snapshot);
-      return;
-    }
-    const center = this.getViewportCenter();
-    const positions = this.computeRadialPositions(
-      snapshot,
-      center,
-      settings.layoutDirection,
-      options
-    );
-    this.suppressRender = true;
-    try {
-      for (const [nodeId, position] of positions) {
-        this.stateManager.updateNode(nodeId, { position });
-      }
-      const updatedSnapshot = this.stateManager.getSnapshot();
-      this.renderSnapshot(updatedSnapshot);
-    } finally {
-      this.suppressRender = false;
-    }
-  }
-  scheduleRender() {
-    if (this.pendingRender)
-      return;
-    this.pendingRender = true;
-    requestAnimationFrame(() => {
-      this.pendingRender = false;
-      if (!this.stateManager || !this.renderer)
-        return;
-      this.renderSnapshot(this.stateManager.getSnapshot());
-    });
-  }
-  scheduleVisibleUpdate() {
-    if (this.visibleUpdateScheduled)
-      return;
-    this.visibleUpdateScheduled = true;
-    requestAnimationFrame(() => {
-      this.visibleUpdateScheduled = false;
-      if (!this.lastSnapshot)
-        return;
-      const nextVisible = this.computeVisibleNodeIds(this.lastSnapshot);
-      if (!this.isVisibleSetChanged(this.visibleNodeIds, nextVisible)) {
-        return;
-      }
-      this.applyVisibleNodes(this.lastSnapshot, nextVisible);
-    });
-  }
-  applyVisibleNodes(snapshot, visibleNodeIds) {
-    this.visibleNodeIds = visibleNodeIds;
-    if (!this.renderer)
-      return;
-    const visibleNodes = snapshot.nodes.filter((n) => visibleNodeIds.has(n.id));
-    const visibleEdges = snapshot.edges.filter(
-      (e) => visibleNodeIds.has(e.fromNodeId) && visibleNodeIds.has(e.toNodeId)
-    );
-    if (this.renderer && "setSelectedNodeId" in this.renderer) {
-      this.renderer.setSelectedNodeId(snapshot.selectedNodeId || null);
-    }
-    this.renderer.render(visibleNodes, visibleEdges, this.currentViewport);
-  }
-  buildRenderData(snapshot, visibleNodeIds) {
-    const nodes = snapshot.nodes.filter((node) => visibleNodeIds.has(node.id));
-    const edges = snapshot.edges.filter(
-      (edge) => visibleNodeIds.has(edge.fromNodeId) && visibleNodeIds.has(edge.toNodeId)
-    );
-    return { nodes, edges };
-  }
-  computeVisibleNodeIds(snapshot) {
-    const bounds = this.getVisibleBounds();
-    const result = /* @__PURE__ */ new Set();
-    const forcedIds = new Set(this.forcedVisibleNodeIds);
-    if (snapshot.selectedNodeId) {
-      forcedIds.add(snapshot.selectedNodeId);
-    }
-    for (const node of snapshot.nodes) {
-      if (forcedIds.has(node.id)) {
-        result.add(node.id);
-        continue;
-      }
-      if (this.isNodeVisible(node.position, bounds)) {
-        result.add(node.id);
-      }
-    }
-    for (const id of forcedIds) {
-      result.add(id);
-    }
-    return result;
-  }
-  getVisibleBounds() {
-    return { ...this.currentViewport };
-  }
-  isNodeVisible(position, bounds) {
-    const halfWidth = NODE_CONSTANTS.MIN_WIDTH / 2;
-    const halfHeight = NODE_CONSTANTS.HEIGHT / 2;
-    const left = position.x - halfWidth;
-    const right = position.x + halfWidth;
-    const top = position.y - halfHeight;
-    const bottom = position.y + halfHeight;
-    return right >= bounds.left && left <= bounds.right && bottom >= bounds.top && top <= bounds.bottom;
-  }
-  isVisibleSetChanged(previous, next) {
-    if (previous.size !== next.size)
-      return true;
-    for (const id of next) {
-      if (!previous.has(id))
-        return true;
-    }
-    return false;
-  }
-  getViewportCenter() {
-    var _a, _b, _c;
-    const rect = (_a = this.mindmapContainerEl) == null ? void 0 : _a.getBoundingClientRect();
-    const width = (_b = rect == null ? void 0 : rect.width) != null ? _b : 800;
-    const height = (_c = rect == null ? void 0 : rect.height) != null ? _c : 600;
-    return { x: width / 2, y: height / 2 };
-  }
-  computeRadialPositions(snapshot, center, layoutDirection, options) {
-    var _a, _b;
-    const positions = /* @__PURE__ */ new Map();
-    if (snapshot.nodes.length === 0) {
-      return positions;
-    }
-    const nodeById = /* @__PURE__ */ new Map();
-    const childrenByParent = /* @__PURE__ */ new Map();
-    for (const node of snapshot.nodes) {
-      nodeById.set(node.id, node);
-      const list = (_a = childrenByParent.get(node.parentId)) != null ? _a : [];
-      list.push(node);
-      childrenByParent.set(node.parentId, list);
-    }
-    const rootId = options.scope === "subtree" && options.rootId ? options.rootId : snapshot.rootId && nodeById.has(snapshot.rootId) && snapshot.rootId || ((_b = snapshot.nodes.find((node) => node.parentId === null)) == null ? void 0 : _b.id) || snapshot.nodes[0].id;
-    const targetNodes = options.scope === "subtree" && options.rootId ? this.collectSubtreeNodeIds(options.rootId, childrenByParent) : null;
-    const rootNode = nodeById.get(rootId);
-    const rootPosition = (rootNode == null ? void 0 : rootNode.userPosition) ? rootNode.position : center;
-    if (!(rootNode == null ? void 0 : rootNode.userPosition)) {
-      positions.set(rootId, rootPosition);
-    }
-    const angleRange = this.getAngleRange(layoutDirection);
-    this.layoutSubtree(
-      rootId,
-      1,
-      angleRange.start,
-      angleRange.end,
-      rootPosition,
-      positions,
-      childrenByParent,
-      targetNodes
-    );
-    return positions;
-  }
-  layoutSubtree(nodeId, depth, startAngle, endAngle, parentPosition, positions, childrenByParent, targetNodes) {
-    var _a;
-    const children = (_a = childrenByParent.get(nodeId)) != null ? _a : [];
-    if (children.length === 0) {
-      return;
-    }
-    const span = endAngle - startAngle;
-    const step = Math.max(
-      span / Math.max(children.length, 1),
-      this.minAngleGap
-    );
-    let angle = startAngle + step / 2;
-    const radius = this.getRadiusForDepth(depth);
-    for (const child of children) {
-      if (targetNodes && !targetNodes.has(child.id)) {
-        angle += step;
-        continue;
-      }
-      const position = child.userPosition ? child.position : this.calculatePosition(parentPosition, radius, angle);
-      if (!child.userPosition) {
-        positions.set(child.id, position);
-      }
-      this.layoutSubtree(
-        child.id,
-        depth + 1,
-        angle - step / 2,
-        angle + step / 2,
-        position,
-        positions,
-        childrenByParent,
-        targetNodes
-      );
-      angle += step;
-    }
-  }
-  getRadiusForDepth(depth) {
-    return this.baseRadius + (depth - 1) * this.depthGap;
-  }
-  getAngleRange(layoutDirection) {
-    switch (layoutDirection) {
-      case "horizontal":
-        return { start: -90, end: 90 };
-      case "vertical":
-        return { start: 0, end: 180 };
-      case "radial":
-      default:
-        return { start: 0, end: 360 };
-    }
-  }
-  calculatePosition(origin, radius, angle) {
-    const rad = angle * Math.PI / 180;
-    return {
-      x: origin.x + Math.cos(rad) * radius,
-      y: origin.y + Math.sin(rad) * radius
-    };
-  }
-  collectSubtreeNodeIds(rootId, childrenByParent) {
-    var _a;
-    const result = /* @__PURE__ */ new Set();
-    const stack = [rootId];
-    while (stack.length > 0) {
-      const current = stack.pop();
-      if (!current)
-        continue;
-      if (result.has(current))
-        continue;
-      result.add(current);
-      const children = (_a = childrenByParent.get(current)) != null ? _a : [];
-      for (const child of children) {
-        stack.push(child.id);
-      }
-    }
-    return result;
-  }
-  /**
-   * Phase 3.1: 단축키 등록
-   *
-   * 책임:
-   * - Ctrl/Cmd + Z → Undo
-   * - 이벤트 전파 방지
-   *
-   * 비책임:
-   * - Redo (Shift + Ctrl/Cmd + Z 금지)
-   */
-  registerShortcuts() {
-    this.registerDomEvent(document, "keydown", (evt) => {
-      if ((evt.ctrlKey || evt.metaKey) && evt.key === "z" && !evt.shiftKey) {
-        evt.preventDefault();
-        this.handleUndo();
-      }
-    });
-  }
-  /**
-   * Phase 3.3: 캔버스 이벤트 등록
-   *
-   * 책임:
-   * - SVG 캔버스 더블클릭 이벤트 등록
-   * - 더블클릭 위치에 노드 생성
-   *
-   * 비책임:
-   * - 렌더링 (Renderer 책임)
-   * - 이벤트 발행 (StateManager 책임)
-   */
-  registerCanvasEvents() {
-    var _a;
-    const target = (_a = this.renderSurfaceEl) != null ? _a : this.mindmapContainerEl;
-    if (!target) {
-      console.warn("Render surface not initialized");
-      return;
-    }
-    target.addEventListener("dblclick", (evt) => {
-      if (evt instanceof MouseEvent) {
-        this.handleCanvasDoubleClick(evt);
-      }
-    });
-  }
-  /**
-   * Phase 3.3: 캔버스 더블클릭 처리 (실제 사용자 액션)
-   *
-   * 책임:
-   * - 더블클릭 위치 계산
-   * - MindMapNode 생성
-   * - CreateNodeCommand로 래핑
-   * - historyManager.execute() 호출
-   *
-   * 비책임:
-   * - StateManager 직접 조작
-   * - 렌더링 (Renderer 책임)
-   */
-  handleCanvasDoubleClick(evt) {
-    if (!this.historyManager || !this.mindmapContainerEl) {
-      console.warn("HistoryManager or render container not initialized");
-      return;
-    }
-    const rect = this.mindmapContainerEl.getBoundingClientRect();
-    const x = evt.clientX - rect.left;
-    const y = evt.clientY - rect.top;
-    const nodeId = crypto.randomUUID();
-    const newNode = {
-      id: nodeId,
-      content: "New Node",
-      position: { x, y },
-      userPosition: true,
-      parentId: null,
-      childIds: [],
-      direction: null,
-      isPinned: false,
-      isCollapsed: false,
-      linkedNotePath: null,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    };
-    const command = new CreateNodeCommand(newNode);
-    try {
-      const snapshot = this.historyManager.execute(command);
-      console.log("Node created at position:", {
-        x,
-        y,
-        nodeId,
-        canUndo: this.historyManager.canUndo()
-      });
-      this.renderSnapshot(snapshot);
-      this.updateUndoButton();
-    } catch (error) {
-      console.error("Failed to create node:", error);
-    }
-  }
-  /**
-   * Phase 1 환영 메시지
-   */
-  renderWelcomeMessage() {
-    var _a;
-    const SVG_NS2 = "http://www.w3.org/2000/svg";
-    const surface = this.renderSurfaceEl;
-    if (!(surface instanceof SVGSVGElement))
-      return;
-    const nodeLayer = surface.querySelector("#node-layer");
-    if (!nodeLayer)
-      return;
-    const containerRect = (_a = this.mindmapContainerEl) == null ? void 0 : _a.getBoundingClientRect();
-    const centerX = ((containerRect == null ? void 0 : containerRect.width) || 800) / 2;
-    const centerY = ((containerRect == null ? void 0 : containerRect.height) || 600) / 2;
-    const nodeGroup = document.createElementNS(SVG_NS2, "g");
-    nodeGroup.setAttribute("transform", `translate(${centerX}, ${centerY})`);
-    const rect = document.createElementNS(SVG_NS2, "rect");
-    rect.setAttribute("x", "-100");
-    rect.setAttribute("y", "-20");
-    rect.setAttribute("width", "200");
-    rect.setAttribute("height", "40");
-    rect.setAttribute("rx", "12");
-    rect.setAttribute("fill", "rgba(255, 255, 255, 0.72)");
-    rect.setAttribute("stroke", "rgba(0, 0, 0, 0.08)");
-    rect.setAttribute("stroke-width", "1");
-    rect.setAttribute("filter", "url(#glass-blur)");
-    const text = document.createElementNS(SVG_NS2, "text");
-    text.setAttribute("x", "0");
-    text.setAttribute("y", "5");
-    text.setAttribute("text-anchor", "middle");
-    text.setAttribute(
-      "font-family",
-      "-apple-system, BlinkMacSystemFont, sans-serif"
-    );
-    text.setAttribute("font-size", "14");
-    text.setAttribute("fill", "#1d1d1f");
-    text.textContent = "Welcome to NeroMind";
-    nodeGroup.appendChild(rect);
-    nodeGroup.appendChild(text);
-    nodeLayer.appendChild(nodeGroup);
-    const defs = document.createElementNS(SVG_NS2, "defs");
-    const filter = document.createElementNS(SVG_NS2, "filter");
-    filter.setAttribute("id", "glass-blur");
-    const feGaussianBlur = document.createElementNS(SVG_NS2, "feGaussianBlur");
-    feGaussianBlur.setAttribute("stdDeviation", "10");
-    filter.appendChild(feGaussianBlur);
-    defs.appendChild(filter);
-    surface.insertBefore(defs, surface.firstChild);
-  }
-  /**
-   * 뷰 닫기
-   *
-   * Phase 3.1 주의사항:
-   * - disposables 배열이 StateManager, HistoryManager, Renderer 자동 정리
-   * - 역순으로 destroy 호출
-   * - null 설정으로 메모리 누수 방지
-   */
-  async onClose() {
-    console.log("Closing NeroMind view...");
-    const disposablesToDestroy = [...this.disposables].reverse();
-    for (const disposable of disposablesToDestroy) {
-      try {
-        disposable.destroy();
+        disposable.dispose();
       } catch (error) {
-        console.error("Error destroying disposable in view:", error);
+        console.error("[DisposableRegistry] Dispose failed", error);
+        errors.push(error);
       }
     }
-    this.disposables = [];
-    this.destroyRenderer();
-    if (this.resizeObserver) {
-      this.resizeObserver.disconnect();
-      this.resizeObserver = null;
-    }
-    this.stateManager = null;
-    this.historyManager = null;
-    this.eventBus = null;
-    this.renderer = null;
-    this.rendererType = null;
-    this.renderSurfaceEl = null;
-    this.undoButtonEl = null;
-    if (this.unsubscribeSettings) {
-      this.unsubscribeSettings();
-      this.unsubscribeSettings = null;
-    }
-    for (const unsubscribe of this.eventUnsubscribers) {
-      unsubscribe();
-    }
-    this.eventUnsubscribers.length = 0;
-    for (const unsubscribe of this.viewportUnsubscribers) {
-      unsubscribe();
-    }
-    this.viewportUnsubscribers.length = 0;
-    this.currentSettings = null;
-    this.lastSnapshot = null;
-    this.visibleNodeIds.clear();
-    this.forcedVisibleNodeIds.clear();
-  }
-  /**
-   * Disposable 추가
-   */
-  addDisposable(disposable) {
-    this.disposables.push(disposable);
-  }
-  /**
-   * Phase 10: Initialize default data
-   *
-   * Per CentralRoot_LeftRightLayout.md: Root node is the "foundation of the map"
-   * and should not be deletable via Undo. We create it directly in state without
-   * going through history.
-   */
-  initializeDefaultData() {
-    if (!this.stateManager || !this.historyManager) {
-      console.error(
-        "[initializeDefaultData] StateManager or HistoryManager not initialized!"
-      );
-      return;
-    }
-    const snapshot = this.stateManager.getSnapshot();
-    console.log("[initializeDefaultData] Current state:", {
-      nodeCount: snapshot.nodes.length,
-      rootId: snapshot.rootId
-    });
-    if (snapshot.nodes.length > 0) {
-      console.log("[initializeDefaultData] Data already exists, rendering...");
-      this.renderSnapshot(snapshot);
-      return;
-    }
-    console.log("[initializeDefaultData] Creating permanent root node...");
-    const center = this.getViewportCenter();
-    const rootNode = {
-      id: "root",
-      // Fixed ID for consistency
-      content: "Central Topic",
-      position: center,
-      userPosition: false,
-      // Allow auto-layout
-      parentId: null,
-      childIds: [],
-      direction: null,
-      isPinned: false,
-      isCollapsed: false,
-      linkedNotePath: null,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    };
-    try {
-      console.log(
-        "[initializeDefaultData] Creating root node (bypassing history)..."
-      );
-      this.stateManager.addNode(rootNode);
-      const newSnapshot = this.stateManager.getSnapshot();
-      console.log("[initializeDefaultData] Root node created:", {
-        nodeCount: newSnapshot.nodes.length,
-        rootId: newSnapshot.rootId,
-        rootPosition: rootNode.position,
-        canUndo: this.historyManager.canUndo()
-        // Should be false
-      });
-      this.renderSnapshot(newSnapshot);
-      this.updateUndoButton();
-      console.log(
-        "[initializeDefaultData] Initialization complete! Root is permanent."
-      );
-    } catch (error) {
-      console.error("[initializeDefaultData] Failed to initialize:", error);
+    this.disposables.clear();
+    if (errors.length > 0) {
+      console.warn(`[DisposableRegistry] ${errors.length} disposables failed to clean up`);
     }
   }
   /**
-   * Phase 11: Setup FAB Toolbar
-   * Author: Nero-kk (https://github.com/Nero-kk)
-   * Blog: http://nero-k.tistory.com
+   * 등록된 Disposable 개수
    */
-  setupFabToolbar() {
-    console.log("\u{1F680} Attempting to render FAB Toolbar...");
-    if (!this.containerEl) {
-      console.error("\u274C FAB Toolbar: containerEl is null!");
-      return;
-    }
-    this.fabMainEl = this.containerEl.createDiv({ cls: "neromind-fab-main" });
-    this.fabMainEl.style.position = "fixed";
-    this.fabMainEl.style.top = "16px";
-    this.fabMainEl.style.left = "16px";
-    this.fabMainEl.style.width = "36px";
-    this.fabMainEl.style.height = "36px";
-    this.fabMainEl.style.zIndex = "99999";
-    this.fabMainEl.style.display = "flex";
-    this.fabMainEl.style.alignItems = "center";
-    this.fabMainEl.style.justifyContent = "center";
-    this.fabMainEl.style.borderRadius = "8px";
-    this.fabMainEl.style.background = "rgba(255, 255, 255, 0.95)";
-    this.fabMainEl.style.border = "1px solid rgba(0, 0, 0, 0.08)";
-    this.fabMainEl.style.boxShadow = "0 4px 16px rgba(0, 0, 0, 0.12)";
-    this.fabMainEl.style.cursor = "pointer";
-    this.fabMainEl.innerHTML = `
-      <svg class="neromind-fab-main-icon" viewBox="0 0 24 24" style="width: 20px; height: 20px;">
-        <path d="M3 12h18M3 6h18M3 18h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-      </svg>
-    `;
-    this.fabMenuEl = this.containerEl.createDiv({ cls: "neromind-fab-menu" });
-    this.fabMenuEl.style.position = "fixed";
-    this.fabMenuEl.style.top = "116px";
-    this.fabMenuEl.style.left = "20px";
-    this.fabMenuEl.style.zIndex = "99998";
-    this.fabMenuEl.style.display = "flex";
-    this.fabMenuEl.style.flexDirection = "column";
-    this.fabMenuEl.style.gap = "4px";
-    this.fabMenuEl.style.borderRadius = "12px";
-    this.fabMenuEl.style.padding = "8px";
-    this.fabMenuEl.style.background = "rgba(30, 30, 30, 0.92)";
-    this.fabMenuEl.style.opacity = "0";
-    this.fabMenuEl.style.pointerEvents = "none";
-    this.fabMenuEl.style.transition = "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)";
-    this.fabUndoBtn = this.fabMenuEl.createDiv({
-      cls: "neromind-fab-item disabled"
-    });
-    this.fabUndoBtn.style.width = "40px";
-    this.fabUndoBtn.style.height = "40px";
-    this.fabUndoBtn.style.display = "flex";
-    this.fabUndoBtn.style.alignItems = "center";
-    this.fabUndoBtn.style.justifyContent = "center";
-    this.fabUndoBtn.style.cursor = "pointer";
-    this.fabUndoBtn.style.borderRadius = "8px";
-    this.fabUndoBtn.innerHTML = `
-      <svg class="neromind-fab-item-icon" viewBox="0 0 24 24" style="width: 20px; height: 20px; stroke: white;">
-        <path d="M3 7v6h6M3 13a9 9 0 1 0 2-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-      </svg>
-    `;
-    this.fabRedoBtn = this.fabMenuEl.createDiv({
-      cls: "neromind-fab-item disabled"
-    });
-    this.fabRedoBtn.style.width = "40px";
-    this.fabRedoBtn.style.height = "40px";
-    this.fabRedoBtn.style.display = "flex";
-    this.fabRedoBtn.style.alignItems = "center";
-    this.fabRedoBtn.style.justifyContent = "center";
-    this.fabRedoBtn.style.cursor = "pointer";
-    this.fabRedoBtn.style.borderRadius = "8px";
-    this.fabRedoBtn.innerHTML = `
-      <svg class="neromind-fab-item-icon" viewBox="0 0 24 24" style="width: 20px; height: 20px; stroke: white;">
-        <path d="M21 7v6h-6M21 13a9 9 0 1 1-2-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-      </svg>
-    `;
-    this.fabMainEl.addEventListener("click", () => this.toggleFabMenu());
-    this.fabUndoBtn.addEventListener("click", () => this.handleFabUndo());
-    this.fabRedoBtn.addEventListener("click", () => this.handleFabRedo());
-    console.log("\u2705 FAB Toolbar created successfully!", {
-      mainButton: this.fabMainEl,
-      menu: this.fabMenuEl,
-      undoBtn: this.fabUndoBtn,
-      redoBtn: this.fabRedoBtn
-    });
-  }
-  toggleFabMenu() {
-    this.isToolbarExpanded = !this.isToolbarExpanded;
-    if (this.isToolbarExpanded) {
-      this.fabMainEl.style.width = "240px";
-      console.log("[FAB] Expanded");
-    } else {
-      this.fabMainEl.style.width = "40px";
-      console.log("[FAB] Collapsed");
-    }
-  }
-  handleFabUndo() {
-    var _a;
-    if (!((_a = this.historyManager) == null ? void 0 : _a.canUndo()))
-      return;
-    try {
-      const snapshot = this.historyManager.undo();
-      this.renderSnapshot(snapshot);
-      this.updateFabButtons();
-    } catch (error) {
-      console.error("[FAB] Undo failed:", error);
-    }
-  }
-  handleFabRedo() {
-    console.log("[FAB] Redo not yet implemented");
-  }
-  updateFabButtons() {
-    var _a, _b, _c;
-    if (!this.historyManager)
-      return;
-    if (this.historyManager.canUndo()) {
-      (_a = this.fabUndoBtn) == null ? void 0 : _a.removeClass("disabled");
-    } else {
-      (_b = this.fabUndoBtn) == null ? void 0 : _b.addClass("disabled");
-    }
-    (_c = this.fabRedoBtn) == null ? void 0 : _c.addClass("disabled");
+  get count() {
+    return this.disposables.size;
   }
 };
 
-// src/settings/NeroMindSettingTab.ts
-var import_obsidian2 = require("obsidian");
-var DEFAULT_SETTINGS = {
-  enableRadialLayout: true,
-  enableArchive: true,
-  layoutDirection: "radial",
-  rendererType: "dom"
-};
-var NeroMindSettingTab = class extends import_obsidian2.PluginSettingTab {
-  constructor(app, plugin) {
-    super(app, plugin);
-    this.plugin = plugin;
+// src/utils/diagnostic.ts
+var BootDiagnostics = class {
+  constructor() {
+    this.modules = /* @__PURE__ */ new Map();
   }
-  get settings() {
-    return this.plugin.settings;
+  /**
+   * 모듈 상태 등록
+   */
+  register(moduleId, status, error) {
+    const moduleStatus = {
+      id: moduleId,
+      status,
+      error,
+      timestamp: Date.now()
+    };
+    this.modules.set(moduleId, moduleStatus);
+    if (status === "success") {
+      console.log(`[BootDiagnostics] ${moduleId}: SUCCESS`);
+    } else {
+      console.error(`[BootDiagnostics] ${moduleId}: FAILED`, error);
+    }
   }
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
-    this.addToggleSetting(
-      "\uBC29\uC0AC\uD615 \uB808\uC774\uC544\uC6C3 \uC790\uB3D9 \uC801\uC6A9",
-      this.settings.enableRadialLayout,
-      async (value) => {
-        this.settings.enableRadialLayout = value;
-        await this.plugin.saveSettings();
-      }
-    );
-    this.addToggleSetting(
-      "\uB178\uB4DC \uC0AD\uC81C \uC2DC Archive \uC0AC\uC6A9",
-      this.settings.enableArchive,
-      async (value) => {
-        this.settings.enableArchive = value;
-        await this.plugin.saveSettings();
-      }
-    );
-    this.addDropdownSetting(
-      "\uAE30\uBCF8 \uB808\uC774\uC544\uC6C3 \uBC29\uD5A5",
-      {
-        horizontal: "horizontal",
-        vertical: "vertical",
-        radial: "radial"
-      },
-      this.settings.layoutDirection,
-      async (value) => {
-        this.settings.layoutDirection = value;
-        await this.plugin.saveSettings();
-      }
-    );
-    this.addDropdownSetting(
-      "\uB80C\uB354\uB7EC \uD0C0\uC785",
-      {
-        dom: "dom",
-        canvas: "canvas"
-      },
-      this.settings.rendererType,
-      async (value) => {
-        this.settings.rendererType = value;
-        await this.plugin.saveSettings();
-      }
-    );
+  /**
+   * 전체 모듈 체크
+   */
+  checkAllModules() {
+    const modules = Array.from(this.modules.values());
+    const failedModules = modules.filter((m) => m.status === "failed");
+    return {
+      success: failedModules.length === 0,
+      modules,
+      failedCount: failedModules.length
+    };
   }
-  addToggleSetting(name, value, onChange) {
-    new import_obsidian2.Setting(this.containerEl).setName(name).addToggle((toggle) => {
-      toggle.setValue(value).onChange(onChange);
-    });
+  /**
+   * 특정 모듈 상태 조회
+   */
+  getModuleStatus(moduleId) {
+    return this.modules.get(moduleId);
   }
-  addDropdownSetting(name, options, value, onChange) {
-    new import_obsidian2.Setting(this.containerEl).setName(name).addDropdown((dropdown) => {
-      dropdown.addOptions(options).setValue(value).onChange(onChange);
-    });
+  /**
+   * 등록된 모듈 수
+   */
+  get moduleCount() {
+    return this.modules.size;
   }
 };
 
 // src/main.ts
-var SETTINGS_CHANGED_EVENT = "settingsChanged";
-var NeroMindPlugin = class extends import_obsidian3.Plugin {
-  constructor() {
-    super(...arguments);
-    this.settings = DEFAULT_SETTINGS;
-    this.disposables = [];
-    this.settingsBus = new EventBus();
-  }
-  /**
-   * 플러그인 로드
-   */
+var VIEW_TYPE_MINDMAP = "kknm-mindmap-view";
+var KKNeroMindPlugin = class extends import_obsidian.Plugin {
   async onload() {
-    console.log("Loading KK-NeroMind Plugin");
-    await this.loadSettings();
-    this.registerView(
-      VIEW_TYPE_NEROMIND,
-      (leaf) => new NeroMindView(leaf, this)
-    );
-    this.addSettingTab(new NeroMindSettingTab(this.app, this));
-    this.addRibbonIcon("brain", "Open NeroMind", () => {
-      this.activateView();
-    });
+    console.log("[KK-NeroMind] Plugin loading...");
+    this.bootDiagnostics = new BootDiagnostics();
+    this.disposableRegistry = new DisposableRegistry();
+    try {
+      this.initializeCore();
+      this.bootDiagnostics.register("core-init", "success");
+    } catch (error) {
+      this.bootDiagnostics.register("core-init", "failed", error);
+      this.enterSafeMode();
+      return;
+    }
+    try {
+      this.registerCommands();
+      this.bootDiagnostics.register("commands", "success");
+    } catch (error) {
+      this.bootDiagnostics.register("commands", "failed", error);
+      this.enterSafeMode();
+      return;
+    }
+    try {
+      this.registerExtensions(["kknm"], VIEW_TYPE_MINDMAP);
+      this.bootDiagnostics.register("extensions", "success");
+    } catch (error) {
+      this.bootDiagnostics.register("extensions", "failed", error);
+      this.enterSafeMode();
+      return;
+    }
+    const bootResult = this.bootDiagnostics.checkAllModules();
+    if (!bootResult.success) {
+      console.error("[KK-NeroMind] Boot failed", bootResult);
+      this.enterSafeMode();
+      return;
+    }
+    console.log("[KK-NeroMind] Plugin loaded successfully");
+  }
+  /**
+   * Initialize core modules
+   */
+  initializeCore() {
+    this.schemaValidator = new SchemaValidator();
+    console.log("[KK-NeroMind] Core modules initialized");
+  }
+  /**
+   * Register commands
+   */
+  registerCommands() {
     this.addCommand({
-      id: "open-neromind-view",
-      name: "Open NeroMind View",
-      callback: () => {
-        this.activateView();
-      }
+      id: "create-new-mindmap",
+      name: "Create New Mind Map",
+      callback: () => this.createNewMindMap()
     });
-    this.app.workspace.onLayoutReady(() => {
-      console.log("NeroMind: Layout ready");
-    });
+    console.log("[KK-NeroMind] Commands registered");
   }
   /**
-   * 플러그인 언로드
+   * Create new mind map file
    */
+  async createNewMindMap() {
+    try {
+      const initialData = {
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        metadata: {
+          created: Date.now(),
+          // ✅ created
+          modified: Date.now(),
+          // ✅ modified
+          title: "New Mind Map"
+          // ✅ title
+        },
+        nodes: {},
+        edges: {},
+        camera: { x: 0, y: 0, zoom: 1 }
+      };
+      if (!this.schemaValidator.validate(initialData)) {
+        console.error("[KK-NeroMind] Invalid initial data");
+        new import_obsidian.Notice("Failed to create mind map: Invalid data");
+        return;
+      }
+      const content = JSON.stringify(initialData, null, 2);
+      const filename = `MindMap-${Date.now()}.kknm`;
+      const file = await this.app.vault.create(filename, content);
+      const leaf = this.app.workspace.getLeaf(false);
+      await leaf.openFile(file);
+      new import_obsidian.Notice(`Created: ${filename}`);
+      console.log(`[KK-NeroMind] Created: ${filename}`);
+    } catch (error) {
+      console.error("[KK-NeroMind] Failed to create mind map", error);
+      new import_obsidian.Notice("Failed to create mind map");
+    }
+  }
+  /**
+   * Enter safe mode (Phase 1에서는 로그만)
+   */
+  enterSafeMode() {
+    console.error("[KK-NeroMind] Entering safe mode - plugin disabled");
+    new import_obsidian.Notice("KK-NeroMind: Plugin loaded in safe mode due to boot errors");
+  }
   async onunload() {
-    console.log("Unloading KK-NeroMind Plugin");
-    for (const disposable of this.disposables.reverse()) {
-      disposable.destroy();
-    }
-    this.disposables = [];
-    this.app.workspace.detachLeavesOfType(VIEW_TYPE_NEROMIND);
-  }
-  /**
-   * 설정 로드
-   */
-  async loadSettings() {
-    const data = await this.loadData();
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, data != null ? data : {});
-  }
-  /**
-   * 설정 저장
-   */
-  async saveSettings() {
-    await this.saveData(this.settings);
-    this.settingsBus.emit(SETTINGS_CHANGED_EVENT, { settings: this.settings });
-  }
-  onSettingsChange(handler) {
-    return this.settingsBus.on(SETTINGS_CHANGED_EVENT, (payload) => {
-      const data = payload;
-      handler(data.settings);
-    });
-  }
-  /**
-   * MindMapView 활성화
-   */
-  async activateView() {
-    const { workspace } = this.app;
-    let leaf = workspace.getLeavesOfType(VIEW_TYPE_NEROMIND)[0];
-    if (!leaf) {
-      const rightLeaf = workspace.getRightLeaf(false);
-      if (rightLeaf) {
-        await rightLeaf.setViewState({
-          type: VIEW_TYPE_NEROMIND,
-          active: true
-        });
-        leaf = rightLeaf;
+    console.log("[KK-NeroMind] Plugin unloading...");
+    if (this.disposableRegistry) {
+      try {
+        this.disposableRegistry.dispose();
+        console.log("[KK-NeroMind] Resources disposed");
+      } catch (error) {
+        console.error("[KK-NeroMind] Error during disposal:", error);
       }
     }
-    if (leaf) {
-      workspace.revealLeaf(leaf);
-    }
-  }
-  /**
-   * Disposable 등록
-   * 
-   * @param disposable - 정리가 필요한 객체
-   */
-  registerDisposable(disposable) {
-    this.disposables.push(disposable);
+    console.log("[KK-NeroMind] Plugin unloaded");
   }
 };

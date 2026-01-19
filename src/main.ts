@@ -1,150 +1,158 @@
+import { Plugin, Notice } from 'obsidian';
+import { SchemaValidator } from './schema/validator';
+import { DisposableRegistry } from './utils/disposable';
+import { BootDiagnostics } from './utils/diagnostic';
+import { MindMapSchema, CURRENT_SCHEMA_VERSION } from './schema/types';
+
+// View Type constant for .kknm files
+const VIEW_TYPE_MINDMAP = 'kknm-mindmap-view';
+
 /**
- * KK-NeroMind Plugin Entry Point
+ * KK-NeroMind Plugin
  * 
- * 책임:
- * - Obsidian 플러그인 라이프사이클 관리
- * - 설정 로드/저장
- * - 뷰 등록
- * - 다른 모듈 초기화 조율
- * 
- * 비책임:
- * - 비즈니스 로직
- * - 렌더링
- * - 상태 관리
- * 
- * Phase 1 P0 범위:
- * - 플러그인 기본 골격
- * - MindMapView 등록
- * - Ribbon 아이콘 추가
+ * Phase 1: Zero-to-One
+ * - Plugin loads in Obsidian
+ * - Command appears in palette
+ * - .kknm file creation works
  */
-
-import { Plugin } from 'obsidian';
-import { NeroMindView, VIEW_TYPE_NEROMIND } from './views/NeroMindView';
-import { Disposable } from './core/Disposable';
-import { EventBus } from './events/EventBus';
-import {
-	DEFAULT_SETTINGS,
-	NeroMindSettings,
-	NeroMindSettingTab
-} from './settings/NeroMindSettingTab';
-
-const SETTINGS_CHANGED_EVENT = 'settingsChanged';
-
-export default class NeroMindPlugin extends Plugin {
-	settings: NeroMindSettings = DEFAULT_SETTINGS;
-	private disposables: Disposable[] = [];
-	private readonly settingsBus = new EventBus();
-
-	/**
-	 * 플러그인 로드
-	 */
-	async onload(): Promise<void> {
-		console.log('Loading KK-NeroMind Plugin');
-
-		// 설정 로드
-		await this.loadSettings();
-
-		// 뷰 등록
-		this.registerView(
-			VIEW_TYPE_NEROMIND,
-			(leaf) => new NeroMindView(leaf, this)
-		);
-
-		// 설정 탭 등록
-		this.addSettingTab(new NeroMindSettingTab(this.app, this));
-
-		// Ribbon 아이콘 추가
-		this.addRibbonIcon('brain', 'Open NeroMind', () => {
-			this.activateView();
-		});
-
-		// 명령 추가: 뷰 열기
-		this.addCommand({
-			id: 'open-neromind-view',
-			name: 'Open NeroMind View',
-			callback: () => {
-				this.activateView();
-			}
-		});
-
-		// 레이아웃 준비 완료 후 초기화
-		this.app.workspace.onLayoutReady(() => {
-			console.log('NeroMind: Layout ready');
-		});
-	}
-
-	/**
-	 * 플러그인 언로드
-	 */
-	async onunload(): Promise<void> {
-		console.log('Unloading KK-NeroMind Plugin');
-
-		// Disposable 역순 해제
-		for (const disposable of this.disposables.reverse()) {
-			disposable.destroy();
-		}
-		this.disposables = [];
-
-		// 뷰 정리
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE_NEROMIND);
-	}
-
-	/**
-	 * 설정 로드
-	 */
-	async loadSettings(): Promise<void> {
-		const data = await this.loadData();
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, data ?? {});
-	}
-
-	/**
-	 * 설정 저장
-	 */
-	async saveSettings(): Promise<void> {
-		await this.saveData(this.settings);
-		this.settingsBus.emit(SETTINGS_CHANGED_EVENT, { settings: this.settings });
-	}
-
-	onSettingsChange(handler: (settings: NeroMindSettings) => void): () => void {
-		return this.settingsBus.on(SETTINGS_CHANGED_EVENT, (payload) => {
-			const data = payload as { settings: NeroMindSettings };
-			handler(data.settings);
-		});
-	}
-
-	/**
-	 * MindMapView 활성화
-	 */
-	async activateView(): Promise<void> {
-		const { workspace } = this.app;
-
-		// 기존 뷰 찾기
-		let leaf = workspace.getLeavesOfType(VIEW_TYPE_NEROMIND)[0];
-
-		// 없으면 새로 생성
-		if (!leaf) {
-			const rightLeaf = workspace.getRightLeaf(false);
-			if (rightLeaf) {
-				await rightLeaf.setViewState({
-					type: VIEW_TYPE_NEROMIND,
-					active: true
-				});
-				leaf = rightLeaf;
-			}
-		}
-
-		// 뷰 활성화
-		if (leaf) {
-			workspace.revealLeaf(leaf);
-		}
-	}
-
-	/**
-	 * Disposable 등록
-	 * 
-	 * @param disposable - 정리가 필요한 객체
-	 */
-	registerDisposable(disposable: Disposable): void {
-		this.disposables.push(disposable);
-	}
+export default class KKNeroMindPlugin extends Plugin {
+  private bootDiagnostics!: BootDiagnostics;
+  private disposableRegistry!: DisposableRegistry;
+  private schemaValidator!: SchemaValidator;
+  
+  async onload(): Promise<void> {
+    console.log('[KK-NeroMind] Plugin loading...');
+    
+    // 1. Initialize diagnostics
+    this.bootDiagnostics = new BootDiagnostics();
+    this.disposableRegistry = new DisposableRegistry();
+    
+    // 2. Initialize core modules
+    try {
+      this.initializeCore();
+      this.bootDiagnostics.register('core-init', 'success');
+    } catch (error) {
+      this.bootDiagnostics.register('core-init', 'failed', error as Error);
+      this.enterSafeMode();
+      return;
+    }
+    
+    // 3. Register commands
+    try {
+      this.registerCommands();
+      this.bootDiagnostics.register('commands', 'success');
+    } catch (error) {
+      this.bootDiagnostics.register('commands', 'failed', error as Error);
+      this.enterSafeMode();
+      return;
+    }
+    
+    // 4. Register file extensions
+    try {
+      this.registerExtensions(['kknm'], VIEW_TYPE_MINDMAP);
+      this.bootDiagnostics.register('extensions', 'success');
+    } catch (error) {
+      this.bootDiagnostics.register('extensions', 'failed', error as Error);
+      this.enterSafeMode();
+      return;
+    }
+    
+    // 5. Boot diagnostic check
+    const bootResult = this.bootDiagnostics.checkAllModules();
+    if (!bootResult.success) {
+      console.error('[KK-NeroMind] Boot failed', bootResult);
+      this.enterSafeMode();
+      return;
+    }
+    
+    console.log('[KK-NeroMind] Plugin loaded successfully');
+  }
+  
+  /**
+   * Initialize core modules
+   */
+  private initializeCore(): void {
+    this.schemaValidator = new SchemaValidator();
+    console.log('[KK-NeroMind] Core modules initialized');
+  }
+  
+  /**
+   * Register commands
+   */
+  private registerCommands(): void {
+    this.addCommand({
+      id: 'create-new-mindmap',
+      name: 'Create New Mind Map',
+      callback: () => this.createNewMindMap()
+    });
+    
+    console.log('[KK-NeroMind] Commands registered');
+  }
+  
+  /**
+   * Create new mind map file
+   */
+  private async createNewMindMap(): Promise<void> {
+    try {
+      // CRITICAL: Use created, modified (NOT createdAt, updatedAt)
+      const initialData: MindMapSchema = {
+        schemaVersion: CURRENT_SCHEMA_VERSION,
+        metadata: {
+          created: Date.now(),    // ✅ created
+          modified: Date.now(),   // ✅ modified
+          title: 'New Mind Map'   // ✅ title
+        },
+        nodes: {},
+        edges: {},
+        camera: { x: 0, y: 0, zoom: 1.0 }
+      };
+      
+      // Validate before creating
+      if (!this.schemaValidator.validate(initialData)) {
+        console.error('[KK-NeroMind] Invalid initial data');
+        new Notice('Failed to create mind map: Invalid data');
+        return;
+      }
+      
+      const content = JSON.stringify(initialData, null, 2);
+      const filename = `MindMap-${Date.now()}.kknm`;
+      
+      const file = await this.app.vault.create(filename, content);
+      
+      // Open the created file
+      const leaf = this.app.workspace.getLeaf(false);
+      await leaf.openFile(file);
+      
+      new Notice(`Created: ${filename}`);
+      console.log(`[KK-NeroMind] Created: ${filename}`);
+      
+    } catch (error) {
+      console.error('[KK-NeroMind] Failed to create mind map', error);
+      new Notice('Failed to create mind map');
+    }
+  }
+  
+  /**
+   * Enter safe mode (Phase 1에서는 로그만)
+   */
+  private enterSafeMode(): void {
+    console.error('[KK-NeroMind] Entering safe mode - plugin disabled');
+    new Notice('KK-NeroMind: Plugin loaded in safe mode due to boot errors');
+    // Phase 2+: Conflict Lock 처리
+  }
+  
+  async onunload(): Promise<void> {
+    console.log('[KK-NeroMind] Plugin unloading...');
+    
+    if (this.disposableRegistry) {
+      try {
+        this.disposableRegistry.dispose();
+        console.log('[KK-NeroMind] Resources disposed');
+      } catch (error) {
+        console.error('[KK-NeroMind] Error during disposal:', error);
+      }
+    }
+    
+    console.log('[KK-NeroMind] Plugin unloaded');
+  }
 }

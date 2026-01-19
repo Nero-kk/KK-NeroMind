@@ -1,27 +1,24 @@
-# Build outputs
+# npm
+node_modules
+
+# build
 main.js
-main.js.map
 *.js.map
 
-# Dependencies
-node_modules/
+# obsidian
+.obsidian/workspace*
+.obsidian/plugins/*
+!.obsidian/plugins/kk-neromind
 
-# Development
-.DS_Store
-*.log
-npm-debug.log*
+# tests
+coverage
 
 # IDE
-.vscode/
-.idea/
+.vscode
+.idea
 *.swp
 *.swo
-*~
-
-# Temporary files
-tmp*
-temp*
-tmpclaude-*
 
 # OS
+.DS_Store
 Thumbs.db
