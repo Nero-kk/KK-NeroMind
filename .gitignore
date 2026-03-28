@@ -1,0 +1,15 @@
+node_modules/
+data.json
+*.zip
+*.png
+*.jpg
+*.jpeg
+
+# 기획/설계 문서 (repo에 불필요)
+ORCHESTRATION.md
+TBD_kk_neromind.md
+prd_kk_neromind.md
+user_journey_kk_neromind.md
+s1.png
+s2.png
+1.png

@@ -1,0 +1,931 @@
+/* ============================================
+   KK-NeroMind — 글래스모피즘 마인드맵 스타일
+   CSS 변수 기반 테마 시스템
+   ============================================ */
+
+/* === 뷰 컨테이너 === */
+.nm-view-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--nm-canvas-bg, var(--background-primary));
+}
+
+/* === 툴바 === */
+.nm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: transparent;
+  flex-shrink: 0;
+  z-index: 10;
+  flex-wrap: wrap;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.nm-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nm-toolbar--collapsed .nm-toolbar__actions {
+  display: none;
+}
+
+.nm-toolbar__btn--disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.nm-toolbar__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  background: var(--nm-node-bg, linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.05) 100%));
+  border: 1px solid var(--nm-node-border, rgba(255, 255, 255, 0.4));
+  box-shadow: var(--nm-node-shadow, 0 4px 16px rgba(0,0,0,0.1), inset 0 2px 4px rgba(255,255,255,0.5), inset 0 -1px 2px rgba(0,0,0,0.08));
+  color: var(--nm-text-color, rgba(255, 255, 255, 0.9));
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.nm-toolbar__btn svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.nm-toolbar__btn:hover {
+  transform: scale(1.05);
+  box-shadow: var(--nm-node-shadow, 0 6px 20px rgba(0,0,0,0.15), inset 0 2px 4px rgba(255,255,255,0.5), inset 0 -1px 2px rgba(0,0,0,0.08));
+}
+
+.nm-toolbar__btn:active {
+  transform: scale(0.97);
+}
+
+.nm-toolbar__separator {
+  width: 1px;
+  height: 20px;
+  background: var(--nm-node-border, rgba(255, 255, 255, 0.2));
+  flex-shrink: 0;
+}
+
+/* 라이트 모드 — 툴바 버튼 */
+.theme-light .nm-toolbar__btn {
+  background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%);
+  border-color: rgba(200, 200, 220, 0.5);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06);
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.theme-light .nm-toolbar__btn:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,0.12), 0 2px 4px rgba(0,0,0,0.08);
+}
+
+.theme-light .nm-toolbar__separator {
+  background: rgba(200, 200, 220, 0.4);
+}
+
+/* === 캔버스 컨테이너 === */
+.nm-canvas-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  outline: none;
+  background: inherit;
+}
+
+.nm-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* === 캔버스 드롭존 피드백 === */
+.nm-canvas--drop-zone {
+  outline: 2px dashed rgba(99, 102, 241, 0.5);
+  outline-offset: -4px;
+  background: rgba(99, 102, 241, 0.03) !important;
+  transition: outline-color 0.2s ease, background 0.2s ease;
+}
+
+.theme-light .nm-canvas--drop-zone {
+  outline-color: rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.04) !important;
+}
+
+/* === 연결선 (Edge) === */
+.nm-edge {
+  fill: none;
+  stroke: var(--nm-edge-color, rgba(255, 255, 255, 0.12));
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* === 노드 공통 === */
+.nm-node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    box-shadow 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.15s ease;
+  box-sizing: border-box;
+  height: 100%;
+  position: relative;
+}
+
+.nm-node:hover {
+  transform: scale(1.03);
+}
+
+.nm-node__label {
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  outline: none;
+}
+
+.nm-node__label--editing {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 2px 6px;
+  min-width: 40px;
+  cursor: text;
+}
+
+.nm-node__note-icon {
+  font-size: 12px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.nm-node__badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--nm-select-ring, rgba(99, 102, 241, 0.8));
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* === 일반 노드 — 알약형 글래스모피즘 === */
+.nm-node--normal {
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  background: var(--nm-node-bg, linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.05) 100%));
+  border: 1px solid var(--nm-node-border, rgba(255, 255, 255, 0.4));
+  border-radius: 100px;
+  box-shadow: var(--nm-node-shadow, 0 8px 32px rgba(0,0,0,0.15), inset 0 3px 6px rgba(255,255,255,0.7), inset 0 -2px 4px rgba(0,0,0,0.1));
+  color: var(--nm-text-color, rgba(255, 255, 255, 0.9));
+  padding: 12px 12px;
+}
+
+/* === 루트 노드 — 알약형 글래스모피즘 === */
+.nm-node--root {
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  background: var(--nm-root-bg, linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.08) 100%));
+  border: 1px solid var(--nm-root-border, rgba(255, 255, 255, 0.5));
+  border-radius: 100px;
+  box-shadow: var(--nm-root-shadow, 0 12px 40px rgba(0,0,0,0.2), inset 0 4px 8px rgba(255,255,255,0.8), inset 0 -2px 6px rgba(0,0,0,0.15));
+  color: var(--nm-text-root-color, rgba(255, 255, 255, 0.95));
+  font-weight: 600;
+  padding: 16px 18px;
+}
+
+.nm-node--root .nm-node__label {
+  font-size: 16px;
+  text-align: center;
+}
+
+/* === 노트 연결 노드 — 오렌지/피치 glow === */
+.nm-node--note-linked {
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  background: var(--nm-note-bg, linear-gradient(135deg, rgba(255,200,150,0.3) 0%, rgba(255,180,120,0.08) 100%));
+  border: 1px solid var(--nm-note-border, rgba(255, 200, 150, 0.5));
+  border-radius: 100px;
+  box-shadow: var(--nm-note-shadow, 0 8px 32px rgba(255,160,80,0.15), inset 0 3px 6px rgba(255,220,180,0.7), inset 0 -2px 4px rgba(0,0,0,0.1));
+  color: var(--nm-text-color, rgba(255, 255, 255, 0.9));
+  padding: 12px 12px;
+}
+
+/* === 선택 상태 === */
+.nm-node--selected {
+  box-shadow:
+    0 0 0 2px var(--nm-select-ring, rgba(99, 102, 241, 0.6)),
+    0 8px 32px var(--nm-select-glow, rgba(99, 102, 241, 0.15)),
+    0 0 20px var(--nm-select-glow, rgba(99, 102, 241, 0.08)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+/* === 편집 모드 === */
+.nm-node--editing {
+  box-shadow:
+    0 0 0 2px rgba(34, 197, 94, 0.5),
+    0 8px 32px rgba(34, 197, 94, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  border-color: rgba(34, 197, 94, 0.3) !important;
+}
+
+/* === 드래그앤드롭 타겟 하이라이트 === */
+.nm-node--drop-target {
+  box-shadow:
+    0 0 0 3px rgba(34, 197, 94, 0.7),
+    0 0 24px rgba(34, 197, 94, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  border-color: rgba(34, 197, 94, 0.5) !important;
+  transform: scale(1.05);
+}
+
+/* 드래그 중인 노드 */
+.nm-node--dragging {
+  opacity: 0.5;
+  outline: 2px dashed rgba(99, 102, 241, 0.6);
+  outline-offset: 2px;
+}
+
+/* 드래그 프리뷰 (마우스 커서 옆) */
+.nm-drag-preview {
+  position: fixed;
+  z-index: 9999;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.9);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* === 노드 검색 패널 === */
+.nm-search-panel {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--nm-search-bg, rgba(30, 30, 50, 0.9));
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--nm-search-border, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  padding: 8px;
+  min-width: 240px;
+  max-height: 320px;
+}
+
+.nm-search-panel__input {
+  background: var(--nm-search-input-bg, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--nm-search-border, rgba(255, 255, 255, 0.15));
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--nm-search-text, rgba(255, 255, 255, 0.9));
+  outline: none;
+}
+
+.nm-search-panel__input:focus {
+  border-color: var(--nm-select-ring, rgba(99, 102, 241, 0.5));
+}
+
+.nm-search-panel__results {
+  overflow-y: auto;
+  max-height: 240px;
+}
+
+.nm-search-panel__item {
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--nm-toolbar-text, rgba(255, 255, 255, 0.7));
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nm-search-panel__item:hover {
+  background: var(--nm-search-input-bg, rgba(255, 255, 255, 0.08));
+  color: var(--nm-search-text, rgba(255, 255, 255, 0.95));
+}
+
+.nm-search-panel__item--active {
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--nm-search-text, rgba(255, 255, 255, 0.95));
+}
+
+.nm-search-panel__empty {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--nm-toolbar-text, rgba(255, 255, 255, 0.4));
+  font-style: italic;
+}
+
+/* === 레벨 기반 네온 glow 색상 === */
+.nm-node--level-0 {
+  /* 루트: 별도 스타일 적용, 추가 glow 없음 */
+}
+
+.nm-node--level-1 {
+  --nm-level-glow: rgba(99, 102, 241, 0.4);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.15),
+    0 0 12px var(--nm-level-glow),
+    inset 0 3px 6px rgba(255, 255, 255, 0.7),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.nm-node--level-2 {
+  --nm-level-glow: rgba(139, 92, 246, 0.4);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.15),
+    0 0 12px var(--nm-level-glow),
+    inset 0 3px 6px rgba(255, 255, 255, 0.7),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.nm-node--level-3 {
+  --nm-level-glow: rgba(236, 72, 153, 0.4);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.15),
+    0 0 12px var(--nm-level-glow),
+    inset 0 3px 6px rgba(255, 255, 255, 0.7),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.nm-node--level-4 {
+  --nm-level-glow: rgba(14, 165, 233, 0.4);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.15),
+    0 0 12px var(--nm-level-glow),
+    inset 0 3px 6px rgba(255, 255, 255, 0.7),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.nm-node--level-5 {
+  --nm-level-glow: rgba(34, 197, 94, 0.4);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.15),
+    0 0 12px var(--nm-level-glow),
+    inset 0 3px 6px rgba(255, 255, 255, 0.7),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.nm-node--level-deep {
+  --nm-level-glow: rgba(156, 163, 175, 0.3);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.15),
+    0 0 8px var(--nm-level-glow),
+    inset 0 3px 6px rgba(255, 255, 255, 0.7),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 라이트 모드 레벨 glow — 깔끔한 외부 그림자만 */
+.theme-light .nm-node--level-1 {
+  --nm-level-glow: rgba(99, 102, 241, 0.15);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 0 8px var(--nm-level-glow);
+}
+.theme-light .nm-node--level-2 {
+  --nm-level-glow: rgba(139, 92, 246, 0.15);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 0 8px var(--nm-level-glow);
+}
+.theme-light .nm-node--level-3 {
+  --nm-level-glow: rgba(236, 72, 153, 0.15);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 0 8px var(--nm-level-glow);
+}
+.theme-light .nm-node--level-4 {
+  --nm-level-glow: rgba(14, 165, 233, 0.15);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 0 8px var(--nm-level-glow);
+}
+.theme-light .nm-node--level-5 {
+  --nm-level-glow: rgba(34, 197, 94, 0.15);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 0 8px var(--nm-level-glow);
+}
+.theme-light .nm-node--level-deep {
+  --nm-level-glow: rgba(156, 163, 175, 0.1);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 0 6px var(--nm-level-glow);
+}
+
+/* === 검색 하이라이트 (캔버스 노드) — 펄스 glow 애니메이션 === */
+.nm-node--search-match {
+  box-shadow:
+    0 0 0 2px rgba(250, 204, 21, 0.6),
+    0 0 16px rgba(250, 204, 21, 0.2) !important;
+  animation: nm-search-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes nm-search-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px rgba(250, 204, 21, 0.6),
+      0 0 16px rgba(250, 204, 21, 0.2) !important;
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px rgba(250, 204, 21, 0.8),
+      0 0 28px rgba(250, 204, 21, 0.35) !important;
+  }
+}
+
+/* === 라이트 모드 대응 (Obsidian 라이트 테마) ===
+   SVG foreignObject 내부에서는 CSS 변수 상속이 안 되므로
+   노드/엣지 스타일은 직접 값으로 재정의해야 한다. */
+
+/* 배경색은 ThemeManager가 인라인 스타일로 관리 */
+
+/* 라이트 모드 — 툴바 (HTML 직접, 변수 가능) */
+.theme-light .nm-toolbar {
+  background: rgba(0, 0, 0, 0.02);
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+.theme-light .nm-toolbar__label {
+  color: rgba(0, 0, 0, 0.5);
+}
+.theme-light .nm-toolbar__btn {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: rgba(0, 0, 0, 0.6);
+}
+.theme-light .nm-toolbar__separator {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* 라이트 모드 — 엣지 (SVG, 직접 지정) */
+.theme-light .nm-edge {
+  stroke: rgba(0, 0, 0, 0.12);
+}
+
+/* 라이트 모드 — 일반 노드 (foreignObject, 직접 지정) */
+.theme-light .nm-node--normal {
+  background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.85) 100%);
+  border-color: rgba(200, 200, 220, 0.5);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.06);
+  color: rgba(0, 0, 0, 0.85);
+}
+
+/* 라이트 모드 — 루트 노드 (foreignObject, 직접 지정) */
+.theme-light .nm-node--root {
+  background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0.9) 100%);
+  border-color: rgba(200, 200, 220, 0.6);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.1), 0 2px 6px rgba(0,0,0,0.06);
+  color: rgba(0, 0, 0, 0.9);
+}
+
+/* 라이트 모드 — 노트 연결 노드 (foreignObject, 직접 지정) */
+.theme-light .nm-node--note-linked {
+  background: linear-gradient(135deg, rgba(255,240,220,0.95) 0%, rgba(255,230,200,0.85) 100%);
+  border-color: rgba(220, 180, 140, 0.5);
+  box-shadow: 0 4px 16px rgba(200,150,80,0.1), 0 1px 3px rgba(0,0,0,0.06);
+  color: rgba(0, 0, 0, 0.85);
+}
+
+/* 라이트 모드 — 편집 라벨 */
+.theme-light .nm-node__label--editing {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* 라이트 모드 — 검색 패널 (foreignObject 아님, HTML 직접) */
+.theme-light .nm-search-panel {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+.theme-light .nm-search-panel__input {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: rgba(0, 0, 0, 0.85);
+}
+.theme-light .nm-search-panel__item {
+  color: rgba(0, 0, 0, 0.6);
+}
+.theme-light .nm-search-panel__item:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.85);
+}
+.theme-light .nm-search-panel__item--active {
+  color: rgba(0, 0, 0, 0.85);
+}
+.theme-light .nm-search-panel__empty {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+/* === Dawn 테마 — 노드 border-radius 약간 부드럽게 === */
+[data-nm-theme="warm"] .nm-node {
+  border-radius: 24px !important;
+}
+
+/* === Neon 테마 === */
+[data-nm-theme="neon"] .nm-node {
+  border-radius: 12px !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+[data-nm-theme="neon"] .nm-node--normal {
+  background: #141420;
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.15), inset 0 1px 2px rgba(0, 240, 255, 0.1);
+  color: #e0e0ff;
+}
+
+[data-nm-theme="neon"] .nm-node--root {
+  background: #1a1a2e;
+  border: 1px solid rgba(0, 240, 255, 0.5);
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.25), 0 0 24px rgba(0, 240, 255, 0.1);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+[data-nm-theme="neon"] .nm-node--note-linked {
+  background: rgba(176, 38, 255, 0.1);
+  border: 1px solid rgba(176, 38, 255, 0.4);
+  box-shadow: 0 0 8px rgba(176, 38, 255, 0.2), inset 0 1px 2px rgba(176, 38, 255, 0.1);
+  color: #e0e0ff;
+}
+
+[data-nm-theme="neon"] .nm-node:hover {
+  transform: none;
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.4), 0 0 24px rgba(0, 240, 255, 0.15);
+  border-color: rgba(0, 240, 255, 0.6);
+}
+
+[data-nm-theme="neon"] .nm-node--selected {
+  box-shadow: 0 0 6px #00f0ff, 0 0 14px rgba(0, 240, 255, 0.5), 0 0 28px rgba(0, 240, 255, 0.2) !important;
+  border-color: #00f0ff !important;
+}
+
+[data-nm-theme="neon"] .nm-node--editing {
+  box-shadow: 0 0 6px #39ff14, 0 0 14px rgba(57, 255, 20, 0.4) !important;
+  border-color: #39ff14 !important;
+}
+
+[data-nm-theme="neon"] .nm-node--drop-target {
+  box-shadow: 0 0 6px #39ff14, 0 0 14px rgba(57, 255, 20, 0.4) !important;
+  border-color: #39ff14 !important;
+  transform: none;
+}
+
+[data-nm-theme="neon"] .nm-node--level-1 { border-color: rgba(0, 240, 255, 0.35); box-shadow: 0 0 8px rgba(0, 240, 255, 0.15); }
+[data-nm-theme="neon"] .nm-node--level-2 { border-color: rgba(176, 38, 255, 0.35); box-shadow: 0 0 8px rgba(176, 38, 255, 0.15); }
+[data-nm-theme="neon"] .nm-node--level-3 { border-color: rgba(255, 45, 123, 0.35); box-shadow: 0 0 8px rgba(255, 45, 123, 0.15); }
+[data-nm-theme="neon"] .nm-node--level-4 { border-color: rgba(57, 255, 20, 0.3); box-shadow: 0 0 8px rgba(57, 255, 20, 0.12); }
+[data-nm-theme="neon"] .nm-node--level-5 { border-color: rgba(255, 240, 31, 0.3); box-shadow: 0 0 8px rgba(255, 240, 31, 0.12); }
+[data-nm-theme="neon"] .nm-node--level-deep { border-color: rgba(77, 77, 255, 0.3); box-shadow: 0 0 6px rgba(77, 77, 255, 0.1); }
+
+[data-nm-theme="neon"] .nm-node--search-match {
+  box-shadow: 0 0 6px #fff01f, 0 0 14px rgba(255, 240, 31, 0.5) !important;
+}
+
+[data-nm-theme="neon"] .nm-node__label--editing {
+  background: rgba(0, 240, 255, 0.06);
+  color: #ffffff;
+}
+
+/* Neon — 툴바 */
+[data-nm-theme="neon"] .nm-toolbar__btn {
+  border-radius: 12px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: #141420;
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  box-shadow: 0 0 6px rgba(0, 240, 255, 0.1);
+  color: #e0e0ff;
+}
+
+[data-nm-theme="neon"] .nm-toolbar__btn:hover {
+  transform: none;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+  border-color: rgba(0, 240, 255, 0.5);
+}
+
+[data-nm-theme="neon"] .nm-toolbar__separator {
+  background: rgba(0, 240, 255, 0.15);
+}
+
+/* Neon — 엣지 */
+[data-nm-theme="neon"] .nm-edge {
+  stroke: rgba(77, 77, 255, 0.4);
+}
+
+/* Neon — 검색 패널 */
+[data-nm-theme="neon"] .nm-search-panel {
+  background: rgba(10, 10, 20, 0.95);
+  border-color: rgba(0, 240, 255, 0.2);
+  border-radius: 12px;
+}
+[data-nm-theme="neon"] .nm-search-panel__input {
+  background: #141420;
+  border-color: rgba(0, 240, 255, 0.2);
+  color: #e0e0ff;
+}
+
+/* === Toss Dark Mode 테마 === */
+[data-nm-theme="toss-dark"] {
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+[data-nm-theme="toss-dark"] .nm-node {
+  border-radius: 16px !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition: background 0.15s ease;
+}
+
+[data-nm-theme="toss-dark"] .nm-node--normal {
+  background: #26282B;
+  border: 1px solid #35373A;
+  box-shadow: none;
+  color: #F2F4F6;
+}
+
+[data-nm-theme="toss-dark"] .nm-node--root {
+  background: #2C2D2F;
+  border: 1px solid #3A3D40;
+  box-shadow: none;
+  color: #F2F4F6;
+  font-weight: 600;
+}
+
+[data-nm-theme="toss-dark"] .nm-node--note-linked {
+  background: #1A2A4A;
+  border: 1px solid rgba(49, 130, 246, 0.25);
+  box-shadow: none;
+  color: #F2F4F6;
+}
+
+[data-nm-theme="toss-dark"] .nm-node:hover {
+  transform: none;
+  background: #35373A;
+}
+
+[data-nm-theme="toss-dark"] .nm-node--selected {
+  box-shadow: 0 0 0 2px #3182F6 !important;
+  border-color: #3182F6 !important;
+}
+
+[data-nm-theme="toss-dark"] .nm-node--editing {
+  box-shadow: 0 0 0 2px #30C85E !important;
+  border-color: #30C85E !important;
+}
+
+[data-nm-theme="toss-dark"] .nm-node--drop-target {
+  box-shadow: 0 0 0 2px #30C85E !important;
+  border-color: #30C85E !important;
+  transform: none;
+}
+
+[data-nm-theme="toss-dark"] .nm-node--level-1,
+[data-nm-theme="toss-dark"] .nm-node--level-2,
+[data-nm-theme="toss-dark"] .nm-node--level-3,
+[data-nm-theme="toss-dark"] .nm-node--level-4,
+[data-nm-theme="toss-dark"] .nm-node--level-5,
+[data-nm-theme="toss-dark"] .nm-node--level-deep {
+  box-shadow: none;
+}
+
+[data-nm-theme="toss-dark"] .nm-node--search-match {
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.7) !important;
+}
+
+[data-nm-theme="toss-dark"] .nm-node__label--editing {
+  background: rgba(255, 255, 255, 0.06);
+  color: #F2F4F6;
+}
+
+/* Toss Dark — 툴바 */
+[data-nm-theme="toss-dark"] .nm-toolbar__btn {
+  border-radius: 12px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: #26282B;
+  border: 1px solid #35373A;
+  box-shadow: none;
+  color: #F2F4F6;
+}
+
+[data-nm-theme="toss-dark"] .nm-toolbar__btn:hover {
+  transform: none;
+  background: #35373A;
+}
+
+[data-nm-theme="toss-dark"] .nm-toolbar__separator {
+  background: #35373A;
+}
+
+/* Toss Dark — 엣지 */
+[data-nm-theme="toss-dark"] .nm-edge {
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+/* Toss Dark — 검색 패널 */
+[data-nm-theme="toss-dark"] .nm-search-panel {
+  background: #212325;
+  border-color: #35373A;
+  border-radius: 16px;
+}
+[data-nm-theme="toss-dark"] .nm-search-panel__input {
+  background: #2C2D2F;
+  border-color: #35373A;
+  color: #F2F4F6;
+  border-radius: 12px;
+}
+[data-nm-theme="toss-dark"] .nm-search-panel__item {
+  color: #8B8F93;
+  border-radius: 8px;
+}
+[data-nm-theme="toss-dark"] .nm-search-panel__item:hover {
+  background: #2C2D2F;
+  color: #F2F4F6;
+}
+[data-nm-theme="toss-dark"] .nm-search-panel__item--active {
+  color: #3182F6;
+}
+
+/* === Square 테마 === */
+[data-nm-theme="square"] {
+}
+
+[data-nm-theme="square"] .nm-node {
+  border-radius: 8px !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+[data-nm-theme="square"] .nm-node--normal {
+  background: #ffffff;
+  border: 1px solid #d2d2d2;
+  box-shadow: none;
+  color: #373737;
+}
+
+[data-nm-theme="square"] .nm-node--root {
+  background: #ffffff;
+  border: 1px solid #b4b4b4;
+  box-shadow: none;
+  color: #212121;
+}
+
+[data-nm-theme="square"] .nm-node--note-linked {
+  background: #fafafa;
+  border: 1px solid #c8c8c8;
+  box-shadow: none;
+  color: #373737;
+}
+
+[data-nm-theme="square"] .nm-node:hover {
+  transform: none;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.3);
+}
+
+[data-nm-theme="square"] .nm-node--selected {
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.7) !important;
+  border-color: rgba(66, 133, 244, 0.5) !important;
+}
+
+[data-nm-theme="square"] .nm-node--editing {
+  box-shadow: 0 0 0 2px rgba(52, 168, 83, 0.6) !important;
+  border-color: rgba(52, 168, 83, 0.4) !important;
+}
+
+[data-nm-theme="square"] .nm-node--level-1,
+[data-nm-theme="square"] .nm-node--level-2,
+[data-nm-theme="square"] .nm-node--level-3,
+[data-nm-theme="square"] .nm-node--level-4,
+[data-nm-theme="square"] .nm-node--level-5,
+[data-nm-theme="square"] .nm-node--level-deep {
+  box-shadow: none;
+}
+
+[data-nm-theme="square"] .nm-node__label--editing {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* Square 테마 — 툴바 */
+[data-nm-theme="square"] .nm-toolbar__btn {
+  border-radius: 8px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: #ffffff;
+  border: 1px solid #d2d2d2;
+  box-shadow: none;
+  color: #373737;
+}
+
+[data-nm-theme="square"] .nm-toolbar__btn:hover {
+  transform: none;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.3);
+}
+
+[data-nm-theme="square"] .nm-toolbar__separator {
+  background: #d2d2d2;
+}
+
+/* Square 테마 — 엣지 */
+[data-nm-theme="square"] .nm-edge {
+  stroke: rgba(0, 0, 0, 0.15);
+}
+
+/* Square 테마 — 검색 패널 */
+[data-nm-theme="square"] .nm-search-panel {
+  background: #ffffff;
+  border-color: #d2d2d2;
+}
+[data-nm-theme="square"] .nm-search-panel__input {
+  background: #f5f5f5;
+  border-color: #d2d2d2;
+  color: #212121;
+}
+
+/* === 삭제 확인 다이얼로그 === */
+/* === SaveAs 모달 === */
+.nm-save-as h3 {
+  margin: 0 0 12px 0;
+}
+.nm-save-as__input-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+.nm-save-as__label {
+  font-size: 13px;
+  font-weight: 500;
+}
+.nm-save-as__input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 14px;
+}
+.nm-save-as__buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* === 삭제 확인 모달 === */
+.nm-confirm-delete h3 {
+  margin: 0 0 12px 0;
+}
+.nm-confirm-delete p {
+  margin: 0 0 20px 0;
+  line-height: 1.5;
+}
+.nm-confirm-delete__buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* === 접근성: 모션 감소 선호 === */
+@media (prefers-reduced-motion: reduce) {
+  .nm-node {
+    transition: none;
+  }
+  .nm-node:hover {
+    transform: none;
+  }
+  .nm-node--search-match {
+    animation: none;
+  }
+  .nm-node--drop-target {
+    transform: none;
+  }
+}
