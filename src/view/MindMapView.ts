@@ -129,10 +129,6 @@ export class MindMapView extends ItemView {
   }
 
   private async initializeView(container: HTMLElement): Promise<void> {
-    // 폰트/배경색 적용
-    this.applyFont(this.settings.fontFamily);
-    this.applyBgColor(this.settings.canvasBgColor);
-
     // 툴바 생성 (FloatingToolbar 컴포넌트)
     this.toolbar = new FloatingToolbar(container, {
       onUndo: () => this.stateManager?.undo(),
@@ -178,6 +174,8 @@ export class MindMapView extends ItemView {
     // 모듈 초기화
     this.stateManager = new StateManager(doc);
     this.themeManager = new ThemeManager(container, doc.theme ?? this.settings.theme);
+    this.themeManager.applyFont(this.settings.fontFamily);
+    this.themeManager.applyBgColor(this.settings.canvasBgColor);
     this.canvasEngine = new CanvasEngine(canvasContainer, this.stateManager);
     this.selectionManager = new SelectionManager(this.stateManager);
     this.editHandler = new NodeEditHandler(
@@ -428,32 +426,10 @@ export class MindMapView extends ItemView {
   /** 설정 변경 시 호출 (테마, 단축키, 폰트 등) */
   updateSettings(settings: NeroMindSettings): void {
     this.settings = settings;
-    this.themeManager?.applyTheme(settings.theme);
+    this.themeManager?.updateSettings(settings);
     this.keyboardHandler?.updateKeyBindings(settings.keyBindings);
     this.editHandler?.updateKeyBindings(settings.keyBindings);
     this.stateManager?.applyAction({ type: "SET_THEME", theme: settings.theme });
-    this.applyFont(settings.fontFamily);
-    this.applyBgColor(settings.canvasBgColor);
-  }
-
-  /** 폰트 패밀리 적용 */
-  private applyFont(fontFamily: string): void {
-    const container = this.containerEl.children[1] as HTMLElement;
-    if (fontFamily) {
-      container.style.fontFamily = fontFamily;
-    } else {
-      container.style.removeProperty("font-family");
-    }
-  }
-
-  /** 배경색 적용 (사용자 지정 색상, 없으면 테마가 알아서 적용) */
-  private applyBgColor(color: string): void {
-    const container = this.containerEl.children[1] as HTMLElement;
-    if (color) {
-      container.style.setProperty("background", color, "important");
-    } else {
-      // 사용자 색상 없으면 ThemeManager가 설정한 배경색 유지
-    }
   }
 
   // === New/Save ===
@@ -518,8 +494,8 @@ export class MindMapView extends ItemView {
       if (file) {
         await this.app.workspace.getLeaf(true).openFile(file as TFile);
       }
-    } catch {
-      // ExportManager가 Notice를 이미 표시함
+    } catch (err) {
+      console.warn("[NeroMind] Export 실패:", err);
     }
   }
 
@@ -535,8 +511,8 @@ export class MindMapView extends ItemView {
       try {
         const doc = await this.importManager.importFromMarkdown(file.path);
         this.stateManager?.applyAction({ type: "LOAD_DOCUMENT", document: doc });
-      } catch {
-        // ImportManager가 Notice를 이미 표시함
+      } catch (err) {
+        console.warn("[NeroMind] Import 실패:", err);
       }
     });
     modal.open();
@@ -553,8 +529,8 @@ export class MindMapView extends ItemView {
       if (file) {
         await this.app.workspace.getLeaf(true).openFile(file as TFile);
       }
-    } catch {
-      // FullNoteCompiler가 Notice를 이미 표시함
+    } catch (err) {
+      console.warn("[NeroMind] FullNote 컴파일 실패:", err);
     }
   }
 

@@ -30,6 +30,40 @@ export class SearchPanel {
   private activeIndex = -1;
   private itemElements: HTMLElement[] = [];
 
+  // 바운드 이벤트 핸들러 (removeEventListener 대응)
+  private readonly handleInput = (): void => {
+    this.activeIndex = -1;
+    this.updateResults();
+  };
+
+  private readonly handleKeydown = (e: KeyboardEvent): void => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      this.close();
+      this.parentEl.focus();
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      this.navigateResult(1);
+      return;
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      this.navigateResult(-1);
+      return;
+    }
+
+    if (e.key === "Enter") {
+      e.preventDefault();
+      this.selectActiveResult();
+      return;
+    }
+  };
+
   constructor(parent: HTMLElement, callbacks: SearchCallbacks) {
     this.parentEl = parent;
     this.callbacks = callbacks;
@@ -56,40 +90,9 @@ export class SearchPanel {
     });
     this.resultsEl = this.containerEl.createDiv({ cls: "nm-search-panel__results" });
 
-    // 입력 이벤트
-    this.inputEl.addEventListener("input", () => {
-      this.activeIndex = -1;
-      this.updateResults();
-    });
-
-    // 키보드 네비게이션
-    this.inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        this.close();
-        this.parentEl.focus();
-        return;
-      }
-
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        this.navigateResult(1);
-        return;
-      }
-
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        this.navigateResult(-1);
-        return;
-      }
-
-      if (e.key === "Enter") {
-        e.preventDefault();
-        this.selectActiveResult();
-        return;
-      }
-    });
+    // 바운드 리스너 등록 (close에서 제거 가능)
+    this.inputEl.addEventListener("input", this.handleInput);
+    this.inputEl.addEventListener("keydown", this.handleKeydown);
 
     this.inputEl.focus();
   }
@@ -101,6 +104,9 @@ export class SearchPanel {
     this.matches = [];
     this.activeIndex = -1;
     this.itemElements = [];
+    // 리스너 명시적 해제 후 DOM 제거
+    this.inputEl?.removeEventListener("input", this.handleInput);
+    this.inputEl?.removeEventListener("keydown", this.handleKeydown);
     this.containerEl?.remove();
     this.containerEl = null;
     this.inputEl = null;

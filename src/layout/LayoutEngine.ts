@@ -1,6 +1,6 @@
 import type { MindMapNode, RenderNode, RenderEdge } from "../types";
 import { LAYOUT } from "../constants";
-import { measureText } from "../utils/TextMetrics";
+import { computeNodeWidth } from "../utils/TextMetrics";
 
 interface LayoutResult {
   readonly nodes: RenderNode[];
@@ -65,11 +65,7 @@ function buildInternalTree(
     : node.children.map((child) => buildInternalTree(child, node.id, depth + 1));
 
   const isRoot = depth === 0;
-  const fontSize = isRoot ? 16 : 14;
-  const paddingX = isRoot ? LAYOUT.ROOT_PADDING_X : LAYOUT.NODE_PADDING_X;
-  const minWidth = isRoot ? LAYOUT.ROOT_MIN_WIDTH : LAYOUT.NODE_MIN_WIDTH;
-  const textWidth = measureText(node.label, fontSize);
-  const nodeWidth = Math.max(minWidth, textWidth + paddingX * 2);
+  const nodeWidth = computeNodeWidth(node.label, isRoot, LAYOUT);
 
   return {
     id: node.id,

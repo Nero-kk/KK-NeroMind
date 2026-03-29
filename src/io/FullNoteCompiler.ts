@@ -1,6 +1,6 @@
-import { type App, TFile, Notice } from "obsidian";
+import { type App, Notice } from "obsidian";
 import type { MindMapNode, MindMapDocument } from "../types";
-import { writeFile, buildOutputPath } from "./FileHelper";
+import { writeFile, buildOutputPath, resolveNotePath, extractNoteName } from "./FileHelper";
 
 /**
  * Full Note 컴파일러.
@@ -47,11 +47,11 @@ export class FullNoteCompiler {
     const label = node.label || "(untitled)";
 
     // 노트 경로 해석: noteRef 우선, 없으면 라벨의 [[위키링크]] 패턴에서 추출
-    const notePath = this.resolveNotePath(node);
+    const notePath = resolveNotePath(this.app, node);
 
     // 라벨 표시: noteRef나 위키링크가 있으면 [[이름]], 없으면 일반 텍스트
     const displayLabel = notePath
-      ? `[[${this.extractNoteName(notePath)}]]`
+      ? `[[${extractNoteName(notePath)}]]`
       : label;
 
     let result = `${indent}- ${displayLabel}\n`;
@@ -78,40 +78,6 @@ export class FullNoteCompiler {
     return result;
   }
 
-  /**
-   * 노드에서 노트 파일 경로를 결정한다.
-   * 1) noteRef가 있으면 그대로 사용
-   * 2) 없으면 라벨에서 [[위키링크]] 패턴을 추출하여 vault에서 파일 검색
-   */
-  private resolveNotePath(node: MindMapNode): string | null {
-    // 1. noteRef 직접 참조
-    if (node.noteRef) {
-      return node.noteRef;
-    }
-
-    // 2. 라벨에서 [[위키링크]] 패턴 추출
-    const match = node.label.match(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/);
-    if (!match) return null;
-
-    const linkText = match[1].trim();
-    if (!linkText) return null;
-
-    // Obsidian metadataCache로 위키링크 해석 (경로 자동 해석)
-    const resolved = this.app.metadataCache.getFirstLinkpathDest(linkText, "");
-    if (resolved instanceof TFile) {
-      return resolved.path;
-    }
-
-    // 직접 경로로 시도 (.md 확장자 추가)
-    const directPath = linkText.endsWith(".md") ? linkText : `${linkText}.md`;
-    const directFile = this.app.vault.getAbstractFileByPath(directPath);
-    if (directFile) {
-      return directPath;
-    }
-
-    return null;
-  }
-
   /** 노트 파일 내용 읽기 (프론트매터 포함) */
   private async readNoteContent(notePath: string): Promise<string | null> {
     // 비-마크다운 파일 가드
@@ -131,13 +97,10 @@ export class FullNoteCompiler {
 
       // 프론트매터 포함하여 반환
       return content.trim();
-    } catch {
+    } catch (err) {
+      console.warn(`[NeroMind] 노트 읽기 실패: ${notePath}`, err);
       return null;
     }
   }
 
-  /** noteRef 경로에서 노트 이름 추출 (.md 제거) */
-  private extractNoteName(noteRef: string): string {
-    return noteRef.split("/").pop()?.replace(".md", "") || noteRef;
-  }
 }

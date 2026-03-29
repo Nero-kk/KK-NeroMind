@@ -32,3 +32,24 @@ export function measureText(text: string, fontSize: number): number {
   }
   return width;
 }
+
+/**
+ * 노드 타입에 따른 렌더링 폭 계산.
+ * LayoutEngine과 NodeRenderer에서 동일한 결과를 보장한다.
+ */
+export function computeNodeWidth(
+  label: string,
+  isRoot: boolean,
+  layout: {
+    readonly ROOT_PADDING_X: number;
+    readonly NODE_PADDING_X: number;
+    readonly ROOT_MIN_WIDTH: number;
+    readonly NODE_MIN_WIDTH: number;
+  },
+): number {
+  const fontSize = isRoot ? 16 : 14;
+  const paddingX = isRoot ? layout.ROOT_PADDING_X : layout.NODE_PADDING_X;
+  const minWidth = isRoot ? layout.ROOT_MIN_WIDTH : layout.NODE_MIN_WIDTH;
+  const textWidth = measureText(label, fontSize);
+  return Math.max(minWidth, textWidth + paddingX * 2);
+}

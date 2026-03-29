@@ -1,4 +1,5 @@
-import { type App, normalizePath } from "obsidian";
+import { type App, TFile, normalizePath } from "obsidian";
+import type { MindMapNode } from "../types";
 
 /**
  * 파일 I/O 공통 유틸리티.
@@ -35,4 +36,41 @@ export function buildOutputPath(outputFolder: string, fileName: string): string 
   return normalizePath(
     outputFolder ? `${outputFolder}/${fileName}` : fileName,
   );
+}
+
+/**
+ * 노드에서 노트 파일 경로를 결정한다.
+ * 1) noteRef가 있으면 그대로 사용
+ * 2) 없으면 라벨에서 [[위키링크]] 패턴을 추출하여 vault에서 파일 검색
+ */
+export function resolveNotePath(app: App, node: MindMapNode): string | null {
+  if (node.noteRef) {
+    return node.noteRef;
+  }
+
+  const match = node.label.match(/\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/);
+  if (!match) return null;
+
+  const linkText = match[1].trim();
+  if (!linkText) return null;
+
+  // Obsidian metadataCache로 위키링크 해석
+  const resolved = app.metadataCache.getFirstLinkpathDest(linkText, "");
+  if (resolved instanceof TFile) {
+    return resolved.path;
+  }
+
+  // 직접 경로로 시도
+  const directPath = linkText.endsWith(".md") ? linkText : `${linkText}.md`;
+  const directFile = app.vault.getAbstractFileByPath(directPath);
+  if (directFile) {
+    return directPath;
+  }
+
+  return null;
+}
+
+/** noteRef 경로에서 노트 이름 추출 (.md 제거) */
+export function extractNoteName(noteRef: string): string {
+  return noteRef.split("/").pop()?.replace(".md", "") || noteRef;
 }

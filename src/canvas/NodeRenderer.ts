@@ -1,6 +1,6 @@
 import type { RenderNode } from "../types";
 import { LAYOUT } from "../constants";
-import { measureText } from "../utils/TextMetrics";
+import { computeNodeWidth } from "../utils/TextMetrics";
 
 interface NodeCallbacks {
   onClick: (nodeId: string, event: MouseEvent) => void;
@@ -156,12 +156,8 @@ export class NodeRenderer {
     }
 
     // 노드 크기 계산 — pill 형태
-    const fontSize = node.isRoot ? 16 : 14;
-    const textWidth = measureText(node.label, fontSize);
-    const paddingX = node.isRoot ? LAYOUT.ROOT_PADDING_X : LAYOUT.NODE_PADDING_X;
-    const minWidth = node.isRoot ? LAYOUT.ROOT_MIN_WIDTH : LAYOUT.NODE_MIN_WIDTH;
     const nodeHeight = node.isRoot ? LAYOUT.ROOT_HEIGHT : LAYOUT.NODE_HEIGHT;
-    const nodeWidth = Math.max(minWidth, textWidth + paddingX * 2);
+    const nodeWidth = computeNodeWidth(node.label, node.isRoot, LAYOUT);
 
     // foreignObject 위치/크기
     fo.setAttribute("x", String(node.computedX - nodeWidth / 2));

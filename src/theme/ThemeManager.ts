@@ -1,4 +1,4 @@
-import type { ThemeId } from "../types";
+import type { ThemeId, NeroMindSettings } from "../types";
 
 /**
  * 테마별 CSS 변수 정의.
@@ -14,6 +14,10 @@ interface ThemeVars {
   // 텍스트
   readonly "--nm-text-color": string;
   readonly "--nm-text-root-color": string;
+
+  // 노드 형태
+  readonly "--nm-node-radius": string;
+  readonly "--nm-node-backdrop": string;
 
   // 일반 노드
   readonly "--nm-node-bg": string;
@@ -33,6 +37,25 @@ interface ThemeVars {
   // 선택 상태
   readonly "--nm-select-ring": string;
   readonly "--nm-select-glow": string;
+  readonly "--nm-select-border": string;
+
+  // 편집 상태
+  readonly "--nm-edit-ring": string;
+  readonly "--nm-edit-glow": string;
+  readonly "--nm-edit-border": string;
+
+  // 드롭 타겟
+  readonly "--nm-drop-ring": string;
+  readonly "--nm-drop-glow": string;
+  readonly "--nm-drop-border": string;
+
+  // 검색 하이라이트
+  readonly "--nm-search-ring": string;
+  readonly "--nm-search-glow": string;
+
+  // 드롭존/드래그
+  readonly "--nm-drop-zone-bg": string;
+  readonly "--nm-drag-preview-bg": string;
 
   // 툴바
   readonly "--nm-toolbar-bg": string;
@@ -56,6 +79,9 @@ const FROST: ThemeVars = {
   "--nm-text-color": "rgba(255, 255, 255, 0.9)",
   "--nm-text-root-color": "rgba(255, 255, 255, 0.95)",
 
+  "--nm-node-radius": "100px",
+  "--nm-node-backdrop": "blur(16px) saturate(140%)",
+
   "--nm-node-bg": "linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.05) 100%)",
   "--nm-node-border": "rgba(255, 255, 255, 0.4)",
   "--nm-node-shadow": "0 8px 32px rgba(0,0,0,0.15), inset 0 3px 6px rgba(255,255,255,0.7), inset 0 -2px 4px rgba(0,0,0,0.1)",
@@ -70,6 +96,21 @@ const FROST: ThemeVars = {
 
   "--nm-select-ring": "rgba(99, 102, 241, 0.7)",
   "--nm-select-glow": "rgba(99, 102, 241, 0.2)",
+  "--nm-select-border": "rgba(255, 255, 255, 0.25)",
+
+  "--nm-edit-ring": "rgba(34, 197, 94, 0.5)",
+  "--nm-edit-glow": "rgba(34, 197, 94, 0.1)",
+  "--nm-edit-border": "rgba(34, 197, 94, 0.3)",
+
+  "--nm-drop-ring": "rgba(34, 197, 94, 0.7)",
+  "--nm-drop-glow": "rgba(34, 197, 94, 0.2)",
+  "--nm-drop-border": "rgba(34, 197, 94, 0.5)",
+
+  "--nm-search-ring": "rgba(250, 204, 21, 0.6)",
+  "--nm-search-glow": "rgba(250, 204, 21, 0.2)",
+
+  "--nm-drop-zone-bg": "rgba(99, 102, 241, 0.03)",
+  "--nm-drag-preview-bg": "rgba(99, 102, 241, 0.9)",
 
   "--nm-toolbar-bg": "transparent",
   "--nm-toolbar-border": "rgba(255, 255, 255, 0.25)",
@@ -91,6 +132,9 @@ const MIDNIGHT: ThemeVars = {
   "--nm-text-color": "rgba(180, 220, 255, 0.9)",
   "--nm-text-root-color": "rgba(200, 230, 255, 0.95)",
 
+  "--nm-node-radius": "100px",
+  "--nm-node-backdrop": "blur(16px) saturate(140%)",
+
   "--nm-node-bg": "linear-gradient(135deg, rgba(60,120,200,0.2) 0%, rgba(30,60,120,0.05) 100%)",
   "--nm-node-border": "rgba(80, 160, 255, 0.4)",
   "--nm-node-shadow": "0 8px 32px rgba(0,0,20,0.3), inset 0 3px 6px rgba(100,180,255,0.4), inset 0 -2px 4px rgba(0,0,0,0.2)",
@@ -105,6 +149,21 @@ const MIDNIGHT: ThemeVars = {
 
   "--nm-select-ring": "rgba(56, 189, 248, 0.7)",
   "--nm-select-glow": "rgba(56, 189, 248, 0.2)",
+  "--nm-select-border": "rgba(80, 160, 255, 0.3)",
+
+  "--nm-edit-ring": "rgba(34, 197, 94, 0.5)",
+  "--nm-edit-glow": "rgba(34, 197, 94, 0.1)",
+  "--nm-edit-border": "rgba(34, 197, 94, 0.3)",
+
+  "--nm-drop-ring": "rgba(34, 197, 94, 0.7)",
+  "--nm-drop-glow": "rgba(34, 197, 94, 0.2)",
+  "--nm-drop-border": "rgba(34, 197, 94, 0.5)",
+
+  "--nm-search-ring": "rgba(250, 204, 21, 0.6)",
+  "--nm-search-glow": "rgba(250, 204, 21, 0.2)",
+
+  "--nm-drop-zone-bg": "rgba(56, 189, 248, 0.03)",
+  "--nm-drag-preview-bg": "rgba(56, 189, 248, 0.9)",
 
   "--nm-toolbar-bg": "transparent",
   "--nm-toolbar-border": "rgba(80, 160, 255, 0.3)",
@@ -126,6 +185,9 @@ const DAWN: ThemeVars = {
   "--nm-text-color": "#faf0e6",
   "--nm-text-root-color": "#fff5eb",
 
+  "--nm-node-radius": "24px",
+  "--nm-node-backdrop": "blur(16px) saturate(140%)",
+
   "--nm-node-bg": "linear-gradient(135deg, rgba(224,122,95,0.25) 0%, rgba(200,140,60,0.08) 100%)",
   "--nm-node-border": "rgba(224, 122, 95, 0.5)",
   "--nm-node-shadow": "0 8px 32px rgba(26,26,46,0.3), inset 0 3px 6px rgba(255,220,160,0.4), inset 0 -2px 4px rgba(0,0,0,0.15)",
@@ -140,6 +202,21 @@ const DAWN: ThemeVars = {
 
   "--nm-select-ring": "rgba(232, 132, 92, 0.7)",
   "--nm-select-glow": "rgba(232, 132, 92, 0.2)",
+  "--nm-select-border": "rgba(200, 155, 123, 0.3)",
+
+  "--nm-edit-ring": "rgba(34, 197, 94, 0.5)",
+  "--nm-edit-glow": "rgba(34, 197, 94, 0.1)",
+  "--nm-edit-border": "rgba(34, 197, 94, 0.3)",
+
+  "--nm-drop-ring": "rgba(34, 197, 94, 0.7)",
+  "--nm-drop-glow": "rgba(34, 197, 94, 0.2)",
+  "--nm-drop-border": "rgba(34, 197, 94, 0.5)",
+
+  "--nm-search-ring": "rgba(250, 204, 21, 0.6)",
+  "--nm-search-glow": "rgba(250, 204, 21, 0.2)",
+
+  "--nm-drop-zone-bg": "rgba(232, 132, 92, 0.03)",
+  "--nm-drag-preview-bg": "rgba(232, 132, 92, 0.9)",
 
   "--nm-toolbar-bg": "transparent",
   "--nm-toolbar-border": "rgba(200, 155, 123, 0.35)",
@@ -161,6 +238,9 @@ const SQUARE: ThemeVars = {
   "--nm-text-color": "rgba(55, 55, 55, 1)",
   "--nm-text-root-color": "rgba(33, 33, 33, 1)",
 
+  "--nm-node-radius": "8px",
+  "--nm-node-backdrop": "none",
+
   "--nm-node-bg": "#ffffff",
   "--nm-node-border": "rgba(210, 210, 210, 1)",
   "--nm-node-shadow": "none",
@@ -175,6 +255,21 @@ const SQUARE: ThemeVars = {
 
   "--nm-select-ring": "rgba(66, 133, 244, 0.7)",
   "--nm-select-glow": "rgba(66, 133, 244, 0.1)",
+  "--nm-select-border": "rgba(66, 133, 244, 0.5)",
+
+  "--nm-edit-ring": "rgba(52, 168, 83, 0.6)",
+  "--nm-edit-glow": "rgba(52, 168, 83, 0.1)",
+  "--nm-edit-border": "rgba(52, 168, 83, 0.4)",
+
+  "--nm-drop-ring": "rgba(52, 168, 83, 0.7)",
+  "--nm-drop-glow": "rgba(52, 168, 83, 0.15)",
+  "--nm-drop-border": "rgba(52, 168, 83, 0.5)",
+
+  "--nm-search-ring": "rgba(250, 204, 21, 0.6)",
+  "--nm-search-glow": "rgba(250, 204, 21, 0.15)",
+
+  "--nm-drop-zone-bg": "rgba(66, 133, 244, 0.03)",
+  "--nm-drag-preview-bg": "rgba(66, 133, 244, 0.9)",
 
   "--nm-toolbar-bg": "transparent",
   "--nm-toolbar-border": "rgba(220, 220, 220, 1)",
@@ -196,6 +291,9 @@ const TOSS_DARK: ThemeVars = {
   "--nm-text-color": "#F2F4F6",
   "--nm-text-root-color": "#F2F4F6",
 
+  "--nm-node-radius": "16px",
+  "--nm-node-backdrop": "none",
+
   "--nm-node-bg": "#26282B",
   "--nm-node-border": "#35373A",
   "--nm-node-shadow": "none",
@@ -210,6 +308,21 @@ const TOSS_DARK: ThemeVars = {
 
   "--nm-select-ring": "#3182F6",
   "--nm-select-glow": "rgba(49, 130, 246, 0.15)",
+  "--nm-select-border": "#3182F6",
+
+  "--nm-edit-ring": "#30C85E",
+  "--nm-edit-glow": "rgba(48, 200, 94, 0.1)",
+  "--nm-edit-border": "#30C85E",
+
+  "--nm-drop-ring": "#30C85E",
+  "--nm-drop-glow": "rgba(48, 200, 94, 0.1)",
+  "--nm-drop-border": "#30C85E",
+
+  "--nm-search-ring": "rgba(245, 166, 35, 0.7)",
+  "--nm-search-glow": "rgba(245, 166, 35, 0.15)",
+
+  "--nm-drop-zone-bg": "rgba(49, 130, 246, 0.03)",
+  "--nm-drag-preview-bg": "#3182F6",
 
   "--nm-toolbar-bg": "transparent",
   "--nm-toolbar-border": "#35373A",
@@ -231,6 +344,9 @@ const NEON: ThemeVars = {
   "--nm-text-color": "#e0e0ff",
   "--nm-text-root-color": "#ffffff",
 
+  "--nm-node-radius": "12px",
+  "--nm-node-backdrop": "none",
+
   "--nm-node-bg": "#141420",
   "--nm-node-border": "rgba(0, 240, 255, 0.3)",
   "--nm-node-shadow": "0 0 8px rgba(0, 240, 255, 0.15), inset 0 1px 2px rgba(0, 240, 255, 0.1)",
@@ -245,6 +361,21 @@ const NEON: ThemeVars = {
 
   "--nm-select-ring": "#00f0ff",
   "--nm-select-glow": "rgba(0, 240, 255, 0.25)",
+  "--nm-select-border": "#00f0ff",
+
+  "--nm-edit-ring": "#39ff14",
+  "--nm-edit-glow": "rgba(57, 255, 20, 0.15)",
+  "--nm-edit-border": "#39ff14",
+
+  "--nm-drop-ring": "#39ff14",
+  "--nm-drop-glow": "rgba(57, 255, 20, 0.15)",
+  "--nm-drop-border": "#39ff14",
+
+  "--nm-search-ring": "#fff01f",
+  "--nm-search-glow": "rgba(255, 240, 31, 0.2)",
+
+  "--nm-drop-zone-bg": "rgba(0, 240, 255, 0.03)",
+  "--nm-drag-preview-bg": "rgba(0, 240, 255, 0.9)",
 
   "--nm-toolbar-bg": "transparent",
   "--nm-toolbar-border": "rgba(0, 240, 255, 0.15)",
@@ -303,5 +434,29 @@ export class ThemeManager {
 
   getCurrentTheme(): ThemeId {
     return this.currentTheme;
+  }
+
+  /** 폰트 패밀리 적용 */
+  applyFont(fontFamily: string): void {
+    if (fontFamily) {
+      this.containerEl.style.fontFamily = fontFamily;
+    } else {
+      this.containerEl.style.removeProperty("font-family");
+    }
+  }
+
+  /** 사용자 지정 배경색 적용 (없으면 테마 배경 유지) */
+  applyBgColor(color: string): void {
+    if (color) {
+      this.containerEl.style.setProperty("background", color, "important");
+    }
+    // 사용자 색상 없으면 applyTheme()이 설정한 배경색 유지
+  }
+
+  /** 설정 변경 시 테마/폰트/배경 일괄 적용 */
+  updateSettings(settings: NeroMindSettings): void {
+    this.applyTheme(settings.theme);
+    this.applyFont(settings.fontFamily);
+    this.applyBgColor(settings.canvasBgColor);
   }
 }

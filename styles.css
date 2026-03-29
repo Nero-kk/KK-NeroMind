@@ -117,13 +117,13 @@
 .nm-canvas--drop-zone {
   outline: 2px dashed rgba(99, 102, 241, 0.5);
   outline-offset: -4px;
-  background: rgba(99, 102, 241, 0.03) !important;
+  background: var(--nm-drop-zone-bg, rgba(99, 102, 241, 0.03));
   transition: outline-color 0.2s ease, background 0.2s ease;
 }
 
 .theme-light .nm-canvas--drop-zone {
   outline-color: rgba(99, 102, 241, 0.4);
-  background: rgba(99, 102, 241, 0.04) !important;
+  background: var(--nm-drop-zone-bg, rgba(99, 102, 241, 0.04));
 }
 
 /* === 연결선 (Edge) === */
@@ -149,6 +149,7 @@
   box-sizing: border-box;
   height: 100%;
   position: relative;
+  border-radius: var(--nm-node-radius, 100px);
 }
 
 .nm-node:hover {
@@ -196,11 +197,10 @@
 
 /* === 일반 노드 — 알약형 글래스모피즘 === */
 .nm-node--normal {
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: var(--nm-node-backdrop, blur(16px) saturate(140%));
+  -webkit-backdrop-filter: var(--nm-node-backdrop, blur(16px) saturate(140%));
   background: var(--nm-node-bg, linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.05) 100%));
   border: 1px solid var(--nm-node-border, rgba(255, 255, 255, 0.4));
-  border-radius: 100px;
   box-shadow: var(--nm-node-shadow, 0 8px 32px rgba(0,0,0,0.15), inset 0 3px 6px rgba(255,255,255,0.7), inset 0 -2px 4px rgba(0,0,0,0.1));
   color: var(--nm-text-color, rgba(255, 255, 255, 0.9));
   padding: 12px 12px;
@@ -208,11 +208,10 @@
 
 /* === 루트 노드 — 알약형 글래스모피즘 === */
 .nm-node--root {
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: var(--nm-node-backdrop, blur(20px) saturate(160%));
+  -webkit-backdrop-filter: var(--nm-node-backdrop, blur(20px) saturate(160%));
   background: var(--nm-root-bg, linear-gradient(135deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.08) 100%));
   border: 1px solid var(--nm-root-border, rgba(255, 255, 255, 0.5));
-  border-radius: 100px;
   box-shadow: var(--nm-root-shadow, 0 12px 40px rgba(0,0,0,0.2), inset 0 4px 8px rgba(255,255,255,0.8), inset 0 -2px 6px rgba(0,0,0,0.15));
   color: var(--nm-text-root-color, rgba(255, 255, 255, 0.95));
   font-weight: 600;
@@ -226,42 +225,41 @@
 
 /* === 노트 연결 노드 — 오렌지/피치 glow === */
 .nm-node--note-linked {
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: var(--nm-node-backdrop, blur(16px) saturate(140%));
+  -webkit-backdrop-filter: var(--nm-node-backdrop, blur(16px) saturate(140%));
   background: var(--nm-note-bg, linear-gradient(135deg, rgba(255,200,150,0.3) 0%, rgba(255,180,120,0.08) 100%));
   border: 1px solid var(--nm-note-border, rgba(255, 200, 150, 0.5));
-  border-radius: 100px;
   box-shadow: var(--nm-note-shadow, 0 8px 32px rgba(255,160,80,0.15), inset 0 3px 6px rgba(255,220,180,0.7), inset 0 -2px 4px rgba(0,0,0,0.1));
   color: var(--nm-text-color, rgba(255, 255, 255, 0.9));
   padding: 12px 12px;
 }
 
 /* === 선택 상태 === */
-.nm-node--selected {
+.nm-node.nm-node--selected {
   box-shadow:
     0 0 0 2px var(--nm-select-ring, rgba(99, 102, 241, 0.6)),
     0 8px 32px var(--nm-select-glow, rgba(99, 102, 241, 0.15)),
     0 0 20px var(--nm-select-glow, rgba(99, 102, 241, 0.08)),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
-  border-color: rgba(255, 255, 255, 0.25) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  border-color: var(--nm-select-border, rgba(255, 255, 255, 0.25));
 }
 
 /* === 편집 모드 === */
-.nm-node--editing {
+.nm-node.nm-node--editing {
   box-shadow:
-    0 0 0 2px rgba(34, 197, 94, 0.5),
-    0 8px 32px rgba(34, 197, 94, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-  border-color: rgba(34, 197, 94, 0.3) !important;
+    0 0 0 2px var(--nm-edit-ring, rgba(34, 197, 94, 0.5)),
+    0 8px 32px var(--nm-edit-glow, rgba(34, 197, 94, 0.1)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border-color: var(--nm-edit-border, rgba(34, 197, 94, 0.3));
 }
 
 /* === 드래그앤드롭 타겟 하이라이트 === */
-.nm-node--drop-target {
+.nm-node.nm-node--drop-target {
   box-shadow:
-    0 0 0 3px rgba(34, 197, 94, 0.7),
-    0 0 24px rgba(34, 197, 94, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
-  border-color: rgba(34, 197, 94, 0.5) !important;
+    0 0 0 3px var(--nm-drop-ring, rgba(34, 197, 94, 0.7)),
+    0 0 24px var(--nm-drop-glow, rgba(34, 197, 94, 0.2)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border-color: var(--nm-drop-border, rgba(34, 197, 94, 0.5));
   transform: scale(1.05);
 }
 
@@ -278,7 +276,7 @@
   z-index: 9999;
   padding: 6px 14px;
   border-radius: 8px;
-  background: rgba(99, 102, 241, 0.9);
+  background: var(--nm-drag-preview-bg, rgba(99, 102, 241, 0.9));
   color: #fff;
   font-size: 12px;
   font-weight: 500;
@@ -441,23 +439,23 @@
 }
 
 /* === 검색 하이라이트 (캔버스 노드) — 펄스 glow 애니메이션 === */
-.nm-node--search-match {
+.nm-node.nm-node--search-match {
   box-shadow:
-    0 0 0 2px rgba(250, 204, 21, 0.6),
-    0 0 16px rgba(250, 204, 21, 0.2) !important;
+    0 0 0 2px var(--nm-search-ring, rgba(250, 204, 21, 0.6)),
+    0 0 16px var(--nm-search-glow, rgba(250, 204, 21, 0.2));
   animation: nm-search-pulse 1.5s ease-in-out infinite;
 }
 
 @keyframes nm-search-pulse {
   0%, 100% {
     box-shadow:
-      0 0 0 2px rgba(250, 204, 21, 0.6),
-      0 0 16px rgba(250, 204, 21, 0.2) !important;
+      0 0 0 2px var(--nm-search-ring, rgba(250, 204, 21, 0.6)),
+      0 0 16px var(--nm-search-glow, rgba(250, 204, 21, 0.2));
   }
   50% {
     box-shadow:
-      0 0 0 3px rgba(250, 204, 21, 0.8),
-      0 0 28px rgba(250, 204, 21, 0.35) !important;
+      0 0 0 3px var(--nm-search-ring, rgba(250, 204, 21, 0.8)),
+      0 0 28px var(--nm-search-glow, rgba(250, 204, 21, 0.35));
   }
 }
 
@@ -542,16 +540,10 @@
   color: rgba(0, 0, 0, 0.35);
 }
 
-/* === Dawn 테마 — 노드 border-radius 약간 부드럽게 === */
-[data-nm-theme="warm"] .nm-node {
-  border-radius: 24px !important;
-}
+/* === Dawn 테마 — border-radius는 CSS 변수(--nm-node-radius)로 ThemeManager가 처리 === */
 
 /* === Neon 테마 === */
 [data-nm-theme="neon"] .nm-node {
-  border-radius: 12px !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
@@ -583,19 +575,19 @@
   border-color: rgba(0, 240, 255, 0.6);
 }
 
-[data-nm-theme="neon"] .nm-node--selected {
-  box-shadow: 0 0 6px #00f0ff, 0 0 14px rgba(0, 240, 255, 0.5), 0 0 28px rgba(0, 240, 255, 0.2) !important;
-  border-color: #00f0ff !important;
+[data-nm-theme="neon"] .nm-node.nm-node--selected {
+  box-shadow: 0 0 6px #00f0ff, 0 0 14px rgba(0, 240, 255, 0.5), 0 0 28px rgba(0, 240, 255, 0.2);
+  border-color: #00f0ff;
 }
 
-[data-nm-theme="neon"] .nm-node--editing {
-  box-shadow: 0 0 6px #39ff14, 0 0 14px rgba(57, 255, 20, 0.4) !important;
-  border-color: #39ff14 !important;
+[data-nm-theme="neon"] .nm-node.nm-node--editing {
+  box-shadow: 0 0 6px #39ff14, 0 0 14px rgba(57, 255, 20, 0.4);
+  border-color: #39ff14;
 }
 
-[data-nm-theme="neon"] .nm-node--drop-target {
-  box-shadow: 0 0 6px #39ff14, 0 0 14px rgba(57, 255, 20, 0.4) !important;
-  border-color: #39ff14 !important;
+[data-nm-theme="neon"] .nm-node.nm-node--drop-target {
+  box-shadow: 0 0 6px #39ff14, 0 0 14px rgba(57, 255, 20, 0.4);
+  border-color: #39ff14;
   transform: none;
 }
 
@@ -606,8 +598,8 @@
 [data-nm-theme="neon"] .nm-node--level-5 { border-color: rgba(255, 240, 31, 0.3); box-shadow: 0 0 8px rgba(255, 240, 31, 0.12); }
 [data-nm-theme="neon"] .nm-node--level-deep { border-color: rgba(77, 77, 255, 0.3); box-shadow: 0 0 6px rgba(77, 77, 255, 0.1); }
 
-[data-nm-theme="neon"] .nm-node--search-match {
-  box-shadow: 0 0 6px #fff01f, 0 0 14px rgba(255, 240, 31, 0.5) !important;
+[data-nm-theme="neon"] .nm-node.nm-node--search-match {
+  box-shadow: 0 0 6px #fff01f, 0 0 14px rgba(255, 240, 31, 0.5);
 }
 
 [data-nm-theme="neon"] .nm-node__label--editing {
@@ -659,9 +651,6 @@
 }
 
 [data-nm-theme="toss-dark"] .nm-node {
-  border-radius: 16px !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
   transition: background 0.15s ease;
 }
 
@@ -692,19 +681,19 @@
   background: #35373A;
 }
 
-[data-nm-theme="toss-dark"] .nm-node--selected {
-  box-shadow: 0 0 0 2px #3182F6 !important;
-  border-color: #3182F6 !important;
+[data-nm-theme="toss-dark"] .nm-node.nm-node--selected {
+  box-shadow: 0 0 0 2px #3182F6;
+  border-color: #3182F6;
 }
 
-[data-nm-theme="toss-dark"] .nm-node--editing {
-  box-shadow: 0 0 0 2px #30C85E !important;
-  border-color: #30C85E !important;
+[data-nm-theme="toss-dark"] .nm-node.nm-node--editing {
+  box-shadow: 0 0 0 2px #30C85E;
+  border-color: #30C85E;
 }
 
-[data-nm-theme="toss-dark"] .nm-node--drop-target {
-  box-shadow: 0 0 0 2px #30C85E !important;
-  border-color: #30C85E !important;
+[data-nm-theme="toss-dark"] .nm-node.nm-node--drop-target {
+  box-shadow: 0 0 0 2px #30C85E;
+  border-color: #30C85E;
   transform: none;
 }
 
@@ -717,8 +706,8 @@
   box-shadow: none;
 }
 
-[data-nm-theme="toss-dark"] .nm-node--search-match {
-  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.7) !important;
+[data-nm-theme="toss-dark"] .nm-node.nm-node--search-match {
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.7);
 }
 
 [data-nm-theme="toss-dark"] .nm-node__label--editing {
@@ -775,15 +764,7 @@
   color: #3182F6;
 }
 
-/* === Square 테마 === */
-[data-nm-theme="square"] {
-}
-
-[data-nm-theme="square"] .nm-node {
-  border-radius: 8px !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
+/* === Square 테마 — border-radius, backdrop-filter는 CSS 변수로 ThemeManager가 처리 === */
 
 [data-nm-theme="square"] .nm-node--normal {
   background: #ffffff;
@@ -811,14 +792,14 @@
   box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.3);
 }
 
-[data-nm-theme="square"] .nm-node--selected {
-  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.7) !important;
-  border-color: rgba(66, 133, 244, 0.5) !important;
+[data-nm-theme="square"] .nm-node.nm-node--selected {
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.7);
+  border-color: rgba(66, 133, 244, 0.5);
 }
 
-[data-nm-theme="square"] .nm-node--editing {
-  box-shadow: 0 0 0 2px rgba(52, 168, 83, 0.6) !important;
-  border-color: rgba(52, 168, 83, 0.4) !important;
+[data-nm-theme="square"] .nm-node.nm-node--editing {
+  box-shadow: 0 0 0 2px rgba(52, 168, 83, 0.6);
+  border-color: rgba(52, 168, 83, 0.4);
 }
 
 [data-nm-theme="square"] .nm-node--level-1,

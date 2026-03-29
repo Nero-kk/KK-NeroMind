@@ -15,6 +15,7 @@ export class FileManager {
   private app: App;
   private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private isDirty = false;
+  private isSaving = false;
   private currentFilePath: string | null = null;
   private retryCount = 0;
 
@@ -78,8 +79,9 @@ export class FileManager {
 
   /** 문서를 현재 파일에 저장 */
   async save(doc: MindMapDocument): Promise<void> {
-    if (!this.currentFilePath) return;
+    if (!this.currentFilePath || this.isSaving) return;
 
+    this.isSaving = true;
     try {
       const content = JSON.stringify(doc, null, 2);
       await this.app.vault.adapter.write(this.currentFilePath, content);
@@ -96,6 +98,8 @@ export class FileManager {
       } else {
         new Notice(`마인드맵 저장 실패: ${String(err)}. 수동 저장(Ctrl+S)을 시도해주세요.`, 5000);
       }
+    } finally {
+      this.isSaving = false;
     }
   }
 

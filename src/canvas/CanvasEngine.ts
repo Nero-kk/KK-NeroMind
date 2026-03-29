@@ -188,6 +188,12 @@ export class CanvasEngine {
     this.resizeObserver?.disconnect();
     this.svgEl.removeEventListener("wheel", this.handleWheel);
     this.svgEl.removeEventListener("mousedown", this.handleMouseDown);
+    // 팬 드래그 중 destroy 시 document 리스너 정리
+    if (this.isPanning) {
+      this.isPanning = false;
+      document.removeEventListener("mousemove", this.handleMouseMove);
+      document.removeEventListener("mouseup", this.handleMouseUp);
+    }
     this.containerEl.removeChild(this.svgEl);
   }
 
